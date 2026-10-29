@@ -1,0 +1,15 @@
+# Environment variables and secrets
+.env
+.env.*
+!.env.example
+
+# Dependencies
+node_modules/
+
+# Production builds
+dist/
+
+# Local environment files
+.DS_Store
+Thumbs.db
+test-infrastructure.png
