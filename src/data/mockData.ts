@@ -17,6 +17,13 @@ export type CivicReport = {
   status: IssueStatus;
   image: string;
   description?: string;
+
+  // AI analysis metadata
+  priority?: IssueStatus;
+  issueDetected?: boolean;
+  confidence?: number | null;
+  visibleEvidence?: string[];
+  limitations?: string[];
 };
 
 

@@ -1,4 +1,5 @@
 ﻿import { useEffect, useState } from "react";
+import { Search } from "lucide-react";
 import {
   Activity,
   ArrowDownRight,
@@ -298,6 +299,29 @@ useEffect(() => {
   };
 }, [addedReports]);
 
+const latestSavedReport = addedReports[0] ?? null;
+
+const featuredAnalysis =
+  analysis ??
+  (latestSavedReport
+    ? {
+        title: latestSavedReport.title,
+        category: latestSavedReport.category,
+        location: latestSavedReport.location,
+        preview: reportImageUrls[latestSavedReport.id] ?? "",
+        observation:
+          latestSavedReport.description ??
+          "No description available.",
+        priority:
+          latestSavedReport.priority ??
+          latestSavedReport.status,
+        issueDetected: latestSavedReport.issueDetected ?? true,
+        confidence: latestSavedReport.confidence ?? null,
+        visibleEvidence: latestSavedReport.visibleEvidence ?? [],
+        limitations: latestSavedReport.limitations ?? [],
+      }
+    : null);
+
 
   
 function handleAnalyzed(
@@ -341,17 +365,24 @@ async function saveReport(result: AnalysisResult) {
     await saveReportImage(id, result.file);
 
     const report: CivicReport = {
-      id,
-      title: result.title,
-      category: result.category,
-      location: result.location,
-      latitude: result.latitude ?? undefined,
-      longitude: result.longitude ?? undefined,
-      time: "Just now",
-      status: "In Progress",
-      image: `indexeddb:${id}`,
-      description: result.description,
-    };
+  id,
+  title: result.title,
+  category: result.category,
+  location: result.location,
+  latitude: result.latitude ?? undefined,
+  longitude: result.longitude ?? undefined,
+  time: "Just now",
+  status: "In Progress",
+  image: `indexeddb:${id}`,
+  description: result.description,
+
+  // Preserve the original AI assessment
+  priority: result.priority,
+  issueDetected: result.issueDetected,
+  confidence: result.confidence,
+  visibleEvidence: result.visibleEvidence,
+  limitations: result.limitations,
+};
 
     setAddedReports((current) => [report, ...current]);
     setAnalysis(null);
@@ -624,46 +655,135 @@ const stats = [
                 </div>
 
                 <div className="featured-content">
-                  <div className="featured-image-wrap">
-                    <img
-                      src="https://images.unsplash.com/photo-1519608487953-e999c86e7455?auto=format&fit=crop&w=900&q=85"
-                      alt="Sample road scene used to illustrate report review"
-                    />
-                    <div className="image-overlay-label">
-                      <span className="status-dot" /> SAMPLE IMAGE
-                    </div>
-                    <div className="image-scan-line" />
-                    <div className="scan-corner corner-tl" />
-                    <div className="scan-corner corner-tr" />
-                    <div className="scan-corner corner-bl" />
-                    <div className="scan-corner corner-br" />
-                  </div>
+{featuredAnalysis ? (
+  <>
+    <div className="featured-image-wrap">
+      <img
+        src={featuredAnalysis.preview}
+        alt={`Uploaded image for ${featuredAnalysis.title}`}
+      />
 
-                  <div className="featured-details">
-                    <span className="success-pill">
-                      <CheckCircle2 size={13} /> UI PREVIEW
-                    </span>
-                    <h3>Infrastructure report review</h3>
-                    <div className="location-line">
-                      <MapPin size={13} /> Example location Â· Kaduna
-                    </div>
-                    <div className="badge-row">
-                      <span className="priority-pill">Illustrative only</span>
-                      <span className="category-pill">Computer vision concept</span>
-                    </div>
-                    <p className="featured-description">
-                      In the finished product, a vision model will describe
-                      visible evidence, separate observations from inferences,
-                      and flag uncertainty for a person to review.
-                    </p>
-                    <div className="feature-actions">
-                      <button className="button-primary" onClick={() => navigate("Upload & Analyze")}>
-                        Try image analysis <ArrowRight size={15} />
-                      </button>
-                    </div>
-                  </div>
+      <div className="image-overlay-label">
+        <span className="status-dot" />
+        AI ANALYSIS
+      </div>
 
-                  <div className="detection-list">
+      <div className="image-scan-line" />
+      <div className="scan-corner corner-tl" />
+      <div className="scan-corner corner-tr" />
+      <div className="scan-corner corner-bl" />
+      <div className="scan-corner corner-br" />
+    </div>
+
+    <div className="featured-details">
+      <span className="success-pill">
+        <CheckCircle2 size={13} />
+        Preliminary AI assessment
+      </span>
+
+      <h3>{featuredAnalysis.title}</h3>
+
+      <div className="location-line">
+        <MapPin size={13} />
+        {featuredAnalysis.location.trim() || "Location not specified"}
+      </div>
+
+      <div className="badge-row">
+        <span className="priority-pill">
+          {featuredAnalysis.priority}
+        </span>
+
+        <span className="category-pill">
+          {featuredAnalysis.category}
+        </span>
+      </div>
+
+      <p className="featured-description">
+        {featuredAnalysis.observation}
+      </p>
+
+      {featuredAnalysis.confidence !== null && (
+        <p className="featured-description">
+          Model confidence:{" "}
+          {Math.round(featuredAnalysis.confidence * 100)}%
+        </p>
+      )}
+
+      {featuredAnalysis.visibleEvidence.length > 0 && (
+        <div className="featured-description">
+          <strong>Visible evidence</strong>
+          <ul>
+            {featuredAnalysis.visibleEvidence.slice(0, 3).map((item, index) => (
+              <li key={`${index}-${item}`}>{item}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {featuredAnalysis.limitations.length > 0 && (
+        <p className="featured-description">
+          <strong>Limitations:</strong>{" "}
+          {featuredAnalysis.limitations.slice(0, 2).join(" ")}
+        </p>
+      )}
+
+      <div className="feature-actions">
+        <button
+          className="button-primary"
+          onClick={() => navigate("Upload & Analyze")}
+        >
+          Analyze another image <ArrowRight size={15} />
+        </button>
+      </div>
+    </div>
+  </>
+) : (
+  <>
+    <div className="featured-image-wrap featured-empty">
+      <div className="image-overlay-label">
+        CIVICLENS AI
+      </div>
+
+      <div className="scan-corner corner-tl" />
+      <div className="scan-corner corner-tr" />
+      <div className="scan-corner corner-bl" />
+      <div className="scan-corner corner-br" />
+
+      <div className="featured-empty-message">
+        <Search size={32} />
+        <strong>No analysis yet</strong>
+        <span>Upload an infrastructure image to get started.</span>
+      </div>
+    </div>
+
+    <div className="featured-details">
+      <span className="success-pill">
+        <Activity size={13} />
+        Ready for analysis
+      </span>
+
+      <h3>Your latest AI assessment</h3>
+
+      <p className="featured-description">
+        Analyze a photo of a pothole, blocked drain, flooding,
+        or another infrastructure issue. CivicLens AI will
+        return preliminary observations for human review.
+      </p>
+
+      <div className="feature-actions">
+        <button
+          className="button-primary"
+          onClick={() => navigate("Upload & Analyze")}
+        >
+          Try image analysis <ArrowRight size={15} />
+        </button>
+      </div>
+    </div>
+  </>
+)}
+
+
+              <div className="detection-list">
                     <span className="detection-heading">ANALYSIS OUTPUT</span>
                     {[
                       ["01", "Visible observations", "What can be seen"],
