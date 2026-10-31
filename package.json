@@ -9,13 +9,16 @@
   "lint": "eslint .",
   "preview": "vite preview",
   "server:dev": "tsx watch server/src/index.ts",
-  "server:start": "tsx server/src/index.ts"
+  "server:start": "tsx server/src/index.ts",
+  "test": "tsx --test server/src/services/metaAI.test.ts"
 },
   "dependencies": {
     "cors": "^2.8.6",
     "dotenv": "^18.0.9",
     "express": "^5.3.0",
+    "express-rate-limit": "^8.7.2",
     "framer-motion": "^14.2.0",
+    "helmet": "^8.3.0",
     "leaflet": "^1.9.4",
     "lucide-react": "^1.57.0",
     "multer": "^2.5.0",

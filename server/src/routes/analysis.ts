@@ -1,5 +1,6 @@
 import { Router } from "express";
 import multer from "multer";
+import rateLimit from "express-rate-limit";
 import {
   analyzeInfrastructureImage,
 } from "../services/metaAI.js";
@@ -7,6 +8,18 @@ import {
 const router = Router();
 
 const MAX_IMAGE_SIZE = 8 * 1024 * 1024;
+
+// The analysis endpoint calls a paid model API and is unauthenticated,
+// so each IP gets a bounded number of requests per minute.
+const analyzeLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  limit: 20,
+  standardHeaders: "draft-8",
+  legacyHeaders: false,
+  message: {
+    error: "Too many analysis requests. Please try again shortly.",
+  },
+});
 
 const allowedMimeTypes = new Set([
   "image/jpeg",
@@ -24,9 +37,11 @@ const upload = multer({
 
   fileFilter: (_req, file, callback) => {
     if (!allowedMimeTypes.has(file.mimetype)) {
-      callback(
-        new Error("Only JPG, PNG, and WebP images are supported."),
+      const error: Error & { statusCode?: number } = new Error(
+        "Only JPG, PNG, and WebP images are supported.",
       );
+      error.statusCode = 400;
+      callback(error);
       return;
     }
 
@@ -36,6 +51,7 @@ const upload = multer({
 
 router.post(
   "/analyze",
+  analyzeLimiter,
   upload.single("image"),
   async (req, res) => {
     if (!req.file) {

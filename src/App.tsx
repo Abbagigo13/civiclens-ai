@@ -7,7 +7,7 @@ import {
   ArrowUpRight,
   Camera,
   Check,
-  CheckCircle2,
+  CircleCheck,
   Clock3,
   FileText,
   MapPin,
@@ -513,7 +513,7 @@ const stats = [
     label: "Resolved",
     value: resolvedReports,
     change: `${resolutionRate}% resolution rate`,
-    icon: CheckCircle2,
+    icon: CircleCheck,
     tone: "green" as const,
   },
   {
@@ -677,7 +677,7 @@ const stats = [
 
     <div className="featured-details">
       <span className="success-pill">
-        <CheckCircle2 size={13} />
+        <CircleCheck size={13} />
         Preliminary AI assessment
       </span>
 
@@ -875,7 +875,7 @@ const stats = [
                     <div><strong>{totalReports}</strong><span>Total reports</span></div>
                   </div>
                   <div className="impact-cell">
-                    <span className="impact-icon green"><CheckCircle2 size={17} /></span>
+                    <span className="impact-icon green"><CircleCheck size={17} /></span>
                     <div><strong>{resolvedReports}</strong><span>Resolved</span></div>
                   </div>
                   <div className="impact-cell">
@@ -907,7 +907,7 @@ const stats = [
                   {activity.map((item, index) => (
                     <div className="activity-item" key={item.title + item.time}>
                       <span className={`activity-icon activity-${index}`}>
-                        {item.icon === "check" ? <CheckCircle2 size={15} /> :
+                        {item.icon === "check" ? <CircleCheck size={15} /> :
                           item.icon === "refresh" ? <Activity size={15} /> :
                             <FileText size={15} />}
                       </span>
@@ -1064,7 +1064,7 @@ const stats = [
             exit={{ opacity: 0, y: 8 }}
             role="status"
           >
-            <CheckCircle2 size={17} /> {toast}
+            <CircleCheck size={17} /> {toast}
           </motion.div>
         )}
       </AnimatePresence>

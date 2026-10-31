@@ -1,7 +1,7 @@
 import { useRef, useState } from "react";
 import {
 ArrowRight,
-CheckCircle2,
+CircleCheck,
 FileImage,
 ImagePlus,
 LoaderCircle,
@@ -130,7 +130,7 @@ return ( <section className="upload-card" id="upload"> <div className="upload-ca
 
       <div className="selected-image-details">
         <span className="file-ready">
-          <CheckCircle2 size={15} /> IMAGE READY
+          <CircleCheck size={15} /> IMAGE READY
         </span>
 
         <strong>{file?.name}</strong>
@@ -207,7 +207,7 @@ return ( <section className="upload-card" id="upload"> <div className="upload-ca
 
   <div className="upload-footnote">
     <span className="privacy-mark">
-      <CheckCircle2 size={13} />
+      <CircleCheck size={13} />
     </span>
 
     <span>

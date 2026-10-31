@@ -46,7 +46,7 @@ const allowedSeverities = [
   "Uncertain",
 ];
 
-function parseAnalysis(
+export function parseAnalysis(
   content: string,
 ): InfrastructureAnalysis {
   const cleaned = content
@@ -202,10 +202,6 @@ temperature: 0.2,
   });
 
   const content = response.choices[0]?.message?.content;
-
-console.log("Meta response model:", response.model);
-console.log("Meta finish reason:", response.choices[0]?.finish_reason);
-console.log("Meta response content:", content);
 
 if (typeof content !== "string" || !content.trim()) {
   throw new Error("Meta returned an empty analysis response.");
