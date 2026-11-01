@@ -21,6 +21,47 @@ function openDatabase(): Promise<IDBDatabase> {
   });
 }
 
+// Downscale a photo for server upload so feeds stay fast. The full
+// original always stays in browser storage. Falls back to the
+// original file when resizing is impossible.
+export async function preparePhoto(file: File): Promise<Blob> {
+  const MAX_EDGE = 1600;
+
+  try {
+    const bitmap = await createImageBitmap(file);
+    const scale = Math.min(
+      1,
+      MAX_EDGE / Math.max(bitmap.width, bitmap.height),
+    );
+
+    if (scale === 1 && file.size <= 1024 * 1024) {
+      bitmap.close();
+      return file;
+    }
+
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.max(1, Math.round(bitmap.width * scale));
+    canvas.height = Math.max(1, Math.round(bitmap.height * scale));
+
+    const ctx = canvas.getContext("2d");
+    if (!ctx) {
+      bitmap.close();
+      return file;
+    }
+
+    ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+    bitmap.close();
+
+    const blob = await new Promise<Blob | null>((resolve) =>
+      canvas.toBlob(resolve, "image/jpeg", 0.82),
+    );
+
+    return blob ?? file;
+  } catch {
+    return file;
+  }
+}
+
 export async function saveReportImage(
   id: string,
   file: File,

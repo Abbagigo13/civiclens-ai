@@ -193,3 +193,21 @@ SEGMENTATION_ENABLED=false
 - [5. Security](docs/5.security.md)
 - [6. Testing](docs/6.testing.md)
 - [7. Agent / AI Coding Rules](docs/7.agents.md)
+
+## Run with Docker
+
+The image builds the frontend and serves it together with the API on
+port 3001. Report data lives in a volume so it survives restarts.
+
+```bash
+docker build -t civiclens-ai .
+docker run --rm -p 3001:3001 \
+  -e MODEL_API_KEY=your-key-here \
+  -e API_KEY=your-operator-key \
+  -v civiclens-data:/data \
+  civiclens-ai
+```
+
+Then open http://localhost:3001 in your browser. Setting `API_KEY`
+requires the operator key for analyze/create/update/delete endpoints —
+paste it in Settings → API access. Reads stay public.

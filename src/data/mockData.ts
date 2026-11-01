@@ -1,10 +1,7 @@
 
-export type IssueStatus =
-  | "In Progress"
-  | "Resolved"
-  | "High Priority"
-  | "Critical";
+export type ReportStatus = "Submitted" | "Under Review" | "Resolved";
 
+export type ReportPriority = "Low" | "Medium" | "High" | "Critical";
 
 export type CivicReport = {
   id: string;
@@ -14,17 +11,49 @@ export type CivicReport = {
   latitude?: number;
   longitude?: number;
   time: string;
-  status: IssueStatus;
+  status: ReportStatus;
   image: string;
   description?: string;
 
+  // True when a copy of the photo is stored on the server.
+  hasPhoto?: boolean;
+
   // AI analysis metadata
-  priority?: IssueStatus;
+  priority?: ReportPriority;
   issueDetected?: boolean;
   confidence?: number | null;
   visibleEvidence?: string[];
   limitations?: string[];
 };
+
+// One-way migration for reports cached under the old model, where
+// priority levels doubled as statuses. Already-new reports pass through.
+export function migrateCachedReport(raw: CivicReport): CivicReport {
+  const report = { ...raw };
+  const statusKey = raw.status as string;
+  const priorityKey = raw.priority as string | undefined;
+
+  if (statusKey === "In Progress") {
+    report.status = "Under Review";
+  } else if (statusKey === "High Priority") {
+    report.status = "Under Review";
+    report.priority ??= "High";
+  } else if (statusKey === "Critical") {
+    report.status = "Under Review";
+    report.priority ??= "Critical";
+  }
+
+  if (priorityKey === "High Priority") {
+    report.priority = "High";
+  } else if (
+    priorityKey === "In Progress" ||
+    priorityKey === "Resolved"
+  ) {
+    report.priority = undefined;
+  }
+
+  return report;
+}
 
 
 export const reports: CivicReport[] = [
@@ -34,7 +63,7 @@ export const reports: CivicReport[] = [
     category: "Drainage",
     location: "Kakuri, Kaduna",
     time: "2 hours ago",
-    status: "In Progress",
+    status: "Under Review",
     image:
       "https://images.unsplash.com/photo-1519608487953-e999c86e7455?auto=format&fit=crop&w=240&q=80",
   },
@@ -44,7 +73,8 @@ export const reports: CivicReport[] = [
     category: "Road infrastructure",
     location: "Kaduna",
     time: "4 hours ago",
-    status: "High Priority",
+    status: "Under Review",
+    priority: "High",
     image:
       "https://images.unsplash.com/photo-1519608487953-e999c86e7455?auto=format&fit=crop&w=240&q=80",
   },
@@ -64,7 +94,7 @@ export const reports: CivicReport[] = [
     category: "Public utilities",
     location: "Ungwan Rimi, Kaduna",
     time: "8 hours ago",
-    status: "In Progress",
+    status: "Under Review",
     image:
       "https://images.unsplash.com/photo-1519608487953-e999c86e7455?auto=format&fit=crop&w=240&q=80",
   },
@@ -74,35 +104,10 @@ export const reports: CivicReport[] = [
     category: "Flooding",
     location: "Millennium City, Kaduna",
     time: "12 hours ago",
-    status: "Critical",
+    status: "Under Review",
+    priority: "Critical",
     image:
       "https://images.unsplash.com/photo-1547683905-f686c993aae5?auto=format&fit=crop&w=240&q=80",
   },
 ];
 
-export const activity = [
-  {
-    icon: "file",
-    title: "New report submitted",
-    detail: "Pothole on Ahmadu Bello Way",
-    time: "2 hours ago",
-  },
-  {
-    icon: "refresh",
-    title: "Status updated",
-    detail: "Drainage issue → In Progress",
-    time: "4 hours ago",
-  },
-  {
-    icon: "check",
-    title: "Report resolved",
-    detail: "Waste accumulation · Sabon Gari",
-    time: "6 hours ago",
-  },
-  {
-    icon: "file",
-    title: "New report submitted",
-    detail: "Damaged street light",
-    time: "8 hours ago",
-  },
-];

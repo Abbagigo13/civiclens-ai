@@ -6,6 +6,7 @@ import {
 } from "lucide-react";
 import { reports as initialReports } from "../../data/mockData";
 import type { CivicReport } from "../../data/mockData";
+import { resolveReportImage } from "../../api/reports";
 import ReportCard from "../../components/ReportCard";
 
 type Props = {
@@ -16,10 +17,10 @@ type Props = {
 
 const filters = [
   "All reports",
-  "In Progress",
+  "Submitted",
+  "Under Review",
   "Resolved",
-  "High Priority",
-  "Critical",
+  "Needs attention",
   "Demo Reports",
 ];
 
@@ -47,13 +48,18 @@ export default function ReportsPanel({
 
   const visibleReports = allReports.filter((report) => {
     const isDemo = report.reportSource === "demo";
+    const needsAttention =
+      (report.priority === "High" || report.priority === "Critical") &&
+      report.status !== "Resolved";
 
     const matchesFilter =
       filter === "All reports"
         ? !isDemo
         : filter === "Demo Reports"
           ? isDemo
-          : report.status === filter && !isDemo;
+          : filter === "Needs attention"
+            ? needsAttention && !isDemo
+            : report.status === filter && !isDemo;
 
     const searchText =
       `${report.title} ${report.location} ${report.category}`.toLowerCase();
@@ -121,9 +127,7 @@ export default function ReportsPanel({
       <div className="report-list">
         {visibleReports.length ? (
           visibleReports.map((report) => {
-            const image = report.image.startsWith("indexeddb:")
-              ? imageUrls[report.id] ?? ""
-              : report.image;
+            const image = resolveReportImage(report, imageUrls);
 
             return (
               <div key={`${report.reportSource}-${report.id}`}>

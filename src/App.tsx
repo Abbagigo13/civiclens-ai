@@ -26,15 +26,36 @@ import UploadPanel, {
   type AIAnalysis,
 } from "./features/analysis/UploadPanel";
 import ReportsPanel from "./features/reports/ReportsPanel";
+import CommunityPage from "./features/community/CommunityPage";
+import SettingsPage from "./features/settings/SettingsPage";
 import CivicMap from "./components/CivicMap";
 import LocationPicker from "./components/LocationPicker";
-import { activity, reports } from "./data/mockData";
-import type { CivicReport, IssueStatus } from "./data/mockData";
+import { reports } from "./data/mockData";
+import { migrateCachedReport } from "./data/mockData";
+import type {
+  CivicReport,
+  ReportPriority,
+  ReportStatus,
+} from "./data/mockData";
 import {
+  preparePhoto,
   saveReportImage,
   getReportImage,
   deleteReportImage,
 } from "./utils/imageStorage";
+import {
+  fetchReports,
+  fetchActivity,
+  createServerReport,
+  updateServerReportStatus,
+  updateServerReportPriority,
+  uploadServerPhoto,
+  resolveReportImage,
+  deleteServerReport,
+} from "./api/reports";
+import type { ActivityItem } from "./api/reports";
+import { parseTileProvider } from "./utils/mapTiles";
+import type { TileProviderId } from "./utils/mapTiles";
 import "./index.css";
 
 type AnalysisResult = {
@@ -47,7 +68,7 @@ type AnalysisResult = {
   longitude: number | null;
   description: string;
   observation: string;
-  priority: IssueStatus;
+  priority: ReportPriority;
   issueDetected: boolean;
   confidence: number | null;
   visibleEvidence: string[];
@@ -63,10 +84,12 @@ function AnalysisModal({
   result,
   onClose,
   onSave,
+  tiles,
 }: {
   result: AnalysisResult;
   onClose: () => void;
   onSave: (result: AnalysisResult) => void;
+  tiles: TileProviderId;
 }) {
   const [title, setTitle] = useState(result.title);
 const [location, setLocation] = useState(result.location);
@@ -144,6 +167,7 @@ const [longitude, setLongitude] = useState<number | null>(result.longitude);
   <LocationPicker
     latitude={latitude}
     longitude={longitude}
+    tiles={tiles}
     onSelect={(lat, lng) => {
       setLatitude(lat);
       setLongitude(lng);
@@ -239,12 +263,29 @@ const [longitude, setLongitude] = useState<number | null>(result.longitude);
 export default function App() {
   const [active, setActive] = useState("Home");
   const [lightMode, setLightMode] = useState(false);
+  const [tileProvider, setTileProvider] = useState<TileProviderId>(() => {
+    try {
+      return parseTileProvider(localStorage.getItem("civiclens-tiles"));
+    } catch {
+      return "carto";
+    }
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem("civiclens-tiles", tileProvider);
+    } catch (error) {
+      console.error("Could not save tile preference:", error);
+    }
+  }, [tileProvider]);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [analysis, setAnalysis] = useState<AnalysisResult | null>(null);
   const [addedReports, setAddedReports] = useState<CivicReport[]>(() => {
   try {
     const saved = localStorage.getItem("civiclens-reports");
-    return saved ? (JSON.parse(saved) as CivicReport[]) : [];
+    return saved
+      ? (JSON.parse(saved) as CivicReport[]).map(migrateCachedReport)
+      : [];
   } catch {
     return [];
   }
@@ -257,8 +298,43 @@ useEffect(() => {
     console.error("Could not save reports in this browser:", error);
   }
 }, [addedReports]);
+
+// The server is the source of truth when reachable. Reports saved
+// while offline keep their local ids and are preserved alongside.
+useEffect(() => {
+  let cancelled = false;
+
+  async function syncFromServer() {
+    try {
+      const serverReports = await fetchReports();
+      if (cancelled) return;
+
+      setAddedReports((current) => {
+        const serverIds = new Set(serverReports.map((item) => item.id));
+        const localOnly = current.filter((item) => !serverIds.has(item.id));
+        return [...serverReports, ...localOnly];
+      });
+
+      try {
+        const feed = await fetchActivity();
+        if (!cancelled) setActivityFeed(feed);
+      } catch (error) {
+        console.error("Could not load activity from the server:", error);
+      }
+    } catch (error) {
+      console.error("Could not load reports from the server:", error);
+    }
+  }
+
+  void syncFromServer();
+
+  return () => {
+    cancelled = true;
+  };
+}, []);
   const [selectedReport, setSelectedReport] = useState<CivicReport | null>(null);
   const [toast, setToast] = useState("");
+  const [activityFeed, setActivityFeed] = useState<ActivityItem[]>([]);
   
 const [reportImageUrls, setReportImageUrls] = useState<Record<string, string>>({});
 
@@ -308,13 +384,14 @@ const featuredAnalysis =
         title: latestSavedReport.title,
         category: latestSavedReport.category,
         location: latestSavedReport.location,
-        preview: reportImageUrls[latestSavedReport.id] ?? "",
+        preview: resolveReportImage(
+          latestSavedReport,
+          reportImageUrls,
+        ),
         observation:
           latestSavedReport.description ??
           "No description available.",
-        priority:
-          latestSavedReport.priority ??
-          latestSavedReport.status,
+        priority: latestSavedReport.priority ?? "Medium",
         issueDetected: latestSavedReport.issueDetected ?? true,
         confidence: latestSavedReport.confidence ?? null,
         visibleEvidence: latestSavedReport.visibleEvidence ?? [],
@@ -329,12 +406,8 @@ function handleAnalyzed(
   preview: string,
   ai: AIAnalysis,
 ) {
-  const priority: IssueStatus =
-    ai.severity === "Critical"
-      ? "Critical"
-      : ai.severity === "High"
-        ? "High Priority"
-        : "In Progress";
+  const priority: ReportPriority =
+    ai.severity === "Uncertain" ? "Medium" : ai.severity;
 
   const observation = ai.issueDetected
     ? ai.description
@@ -359,46 +432,98 @@ function handleAnalyzed(
 }
   
 async function saveReport(result: AnalysisResult) {
-  const id = `CL-${Date.now().toString().slice(-6)}`;
+  let report: CivicReport;
+  let offline = false;
+  let authRejected = false;
 
   try {
-    await saveReportImage(id, result.file);
+    report = await createServerReport({
+      title: result.title,
+      category: result.category,
+      location: result.location,
+      latitude: result.latitude,
+      longitude: result.longitude,
+      description: result.description,
+      status: "Submitted",
+      priority: result.priority,
+      issueDetected: result.issueDetected,
+      confidence: result.confidence,
+      visibleEvidence: result.visibleEvidence,
+      limitations: result.limitations,
+    });
+  } catch (error) {
+    console.error("Could not save report to the server:", error);
+    offline = true;
+    authRejected =
+      (error as { statusCode?: unknown }).statusCode === 401;
 
-    const report: CivicReport = {
-  id,
-  title: result.title,
-  category: result.category,
-  location: result.location,
-  latitude: result.latitude ?? undefined,
-  longitude: result.longitude ?? undefined,
-  time: "Just now",
-  status: "In Progress",
-  image: `indexeddb:${id}`,
-  description: result.description,
+    const id = `CL-${Date.now().toString().slice(-6)}`;
 
-  // Preserve the original AI assessment
-  priority: result.priority,
-  issueDetected: result.issueDetected,
-  confidence: result.confidence,
-  visibleEvidence: result.visibleEvidence,
-  limitations: result.limitations,
-};
+    report = {
+      id,
+      title: result.title,
+      category: result.category,
+      location: result.location,
+      latitude: result.latitude ?? undefined,
+      longitude: result.longitude ?? undefined,
+      time: "Just now",
+      status: "Submitted",
+      image: `indexeddb:${id}`,
+      description: result.description,
 
-    setAddedReports((current) => [report, ...current]);
-    setAnalysis(null);
-    setActive("My Reports");
-    setToast("Report and photo saved in this browser.");
+      // Preserve the original AI assessment
+      priority: result.priority,
+      issueDetected: result.issueDetected,
+      confidence: result.confidence,
+      visibleEvidence: result.visibleEvidence,
+      limitations: result.limitations,
+    };
+  }
 
-    window.setTimeout(() => setToast(""), 3000);
+  try {
+    await saveReportImage(report.id, result.file);
   } catch (error) {
     console.error("Could not save report image:", error);
-    setToast("Could not save the photo. Please try again.");
+    setToast("Report saved, but the photo could not be stored.");
     window.setTimeout(() => setToast(""), 3000);
   }
+
+  // Sync a downscaled copy to the server so the photo survives
+  // beyond this browser. Best effort: the local original remains.
+  if (!offline) {
+    try {
+      const prepared = await preparePhoto(result.file);
+      report.hasPhoto = await uploadServerPhoto(report.id, prepared);
+    } catch (error) {
+      console.error("Could not sync photo to the server:", error);
+    }
+  }
+
+  setAddedReports((current) => [report, ...current]);
+  void refreshActivity();
+  setAnalysis(null);
+  setActive("My Reports");
+  setToast(
+    authRejected
+      ? "Server rejected the API key — saved in this browser only. Check Settings."
+      : offline
+        ? "Backend unreachable — saved in this browser only."
+        : "Report saved.",
+  );
+
+  window.setTimeout(() => setToast(""), 3000);
 }
 
 
-function updateReportStatus(reportId: string, status: IssueStatus) {
+async function refreshActivity() {
+  try {
+    setActivityFeed(await fetchActivity());
+  } catch (error) {
+    console.error("Could not refresh activity:", error);
+  }
+}
+
+function updateReportStatus(reportId: string, status: ReportStatus) {
   setAddedReports((current) =>
     current.map((report) =>
       report.id === reportId ? { ...report, status } : report,
@@ -411,16 +536,64 @@ function updateReportStatus(reportId: string, status: IssueStatus) {
       : current,
   );
 
+  // Best-effort sync: local-only reports resolve to null,
+  // real failures are logged and keep the local change.
+  void updateServerReportStatus(reportId, status)
+    .then(() => refreshActivity())
+    .catch((error) => {
+      console.error(`Could not sync status for ${reportId}:`, error);
+
+      if ((error as { statusCode?: unknown }).statusCode === 401) {
+        setToast("Server rejected the API key. Check Settings.");
+        window.setTimeout(() => setToast(""), 3000);
+      }
+    });
+
   setToast("Report status updated.");
+  window.setTimeout(() => setToast(""), 2500);
+}
+
+function updateReportPriority(reportId: string, priority: ReportPriority) {
+  setAddedReports((current) =>
+    current.map((report) =>
+      report.id === reportId ? { ...report, priority } : report,
+    ),
+  );
+
+  setSelectedReport((current) =>
+    current && current.id === reportId
+      ? { ...current, priority }
+      : current,
+  );
+
+  void updateServerReportPriority(reportId, priority).catch((error) => {
+    console.error(`Could not sync priority for ${reportId}:`, error);
+
+    if ((error as { statusCode?: unknown }).statusCode === 401) {
+      setToast("Server rejected the API key. Check Settings.");
+      window.setTimeout(() => setToast(""), 3000);
+    }
+  });
+
+  setToast("Report priority updated.");
   window.setTimeout(() => setToast(""), 2500);
 }
 
 async function deleteReport(report: CivicReport) {
   const confirmed = window.confirm(
-    `Delete "${report.title}"? This will permanently remove the report and its saved photo from this browser.`,
+    `Delete "${report.title}"? This will permanently remove the report and its saved photo.`,
   );
 
   if (!confirmed) return;
+
+  await deleteServerReport(report.id).catch((error) => {
+    console.error(`Could not delete ${report.id} from the server:`, error);
+
+    if ((error as { statusCode?: unknown }).statusCode === 401) {
+      setToast("Server rejected the API key. Check Settings.");
+      window.setTimeout(() => setToast(""), 3000);
+    }
+  });
 
   try {
     // Delete the stored photo for locally submitted reports.
@@ -432,6 +605,7 @@ async function deleteReport(report: CivicReport) {
     setAddedReports((current) =>
       current.filter((item) => item.id !== report.id),
     );
+    void refreshActivity();
 
     // Release the image URL from browser memory.
     const imageUrl = reportImageUrls[report.id];
@@ -456,6 +630,61 @@ async function deleteReport(report: CivicReport) {
   window.setTimeout(() => setToast(""), 3000);
 }
 
+  function exportReports() {
+    const blob = new Blob([JSON.stringify(addedReports, null, 2)], {
+      type: "application/json",
+    });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "civiclens-reports.json";
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+
+    setToast("Reports exported as JSON.");
+    window.setTimeout(() => setToast(""), 2500);
+  }
+
+  async function clearAllData() {
+    if (addedReports.length === 0) {
+      setToast("Nothing to clear.");
+      window.setTimeout(() => setToast(""), 2500);
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `Permanently delete all ${addedReports.length} report(s) and their photos from this browser and the server?`,
+    );
+
+    if (!confirmed) return;
+
+    for (const report of addedReports) {
+      try {
+        await deleteServerReport(report.id);
+      } catch (error) {
+        console.error(`Could not delete ${report.id} from server:`, error);
+      }
+
+      try {
+        await deleteReportImage(report.id);
+      } catch (error) {
+        console.error(`Could not delete photo for ${report.id}:`, error);
+      }
+
+      const imageUrl = reportImageUrls[report.id];
+      if (imageUrl) URL.revokeObjectURL(imageUrl);
+    }
+
+    setReportImageUrls({});
+    setAddedReports([]);
+    setSelectedReport(null);
+    void refreshActivity();
+    setToast("All reports and photos deleted.");
+    window.setTimeout(() => setToast(""), 3000);
+  }
+
   function navigate(page: string) {
     setActive(page);
     setSidebarOpen(false);
@@ -466,12 +695,6 @@ async function deleteReport(report: CivicReport) {
       document.getElementById("reports")?.scrollIntoView({ behavior: "smooth" });
     } else if (page === "Map View") {
       document.getElementById("map-view")?.scrollIntoView({ behavior: "smooth" });
-    } else if (page === "Settings") {
-      setToast("Settings will be added in a future milestone.");
-      window.setTimeout(() => setToast(""), 2500);
-    } else if (page === "Community") {
-      setToast("Community features are planned for a future milestone.");
-      window.setTimeout(() => setToast(""), 2500);
     } else {
       window.scrollTo({ top: 0, behavior: "smooth" });
     }
@@ -488,12 +711,14 @@ const resolvedReports = allDashboardReports.filter(
   (report) => report.status === "Resolved",
 ).length;
 
-const inProgressReports = allDashboardReports.filter(
-  (report) => report.status === "In Progress",
+const underReviewReports = allDashboardReports.filter(
+  (report) => report.status === "Under Review",
 ).length;
 
-const criticalReports = allDashboardReports.filter(
-  (report) => report.status === "Critical",
+const attentionReports = allDashboardReports.filter(
+  (report) =>
+    (report.priority === "High" || report.priority === "Critical") &&
+    report.status !== "Resolved",
 ).length;
 
 const resolutionRate =
@@ -517,16 +742,16 @@ const stats = [
     tone: "green" as const,
   },
   {
-    label: "In progress",
-    value: inProgressReports,
+    label: "Under review",
+    value: underReviewReports,
     change: "Currently being tracked",
     icon: Clock3,
     tone: "purple" as const,
   },
   {
-    label: "Critical",
-    value: criticalReports,
-    change: "Needs human review",
+    label: "Needs attention",
+    value: attentionReports,
+    change: "High or critical priority",
     icon: TriangleAlert,
     tone: "orange" as const,
   },
@@ -549,6 +774,29 @@ const stats = [
           onToggleTheme={() => setLightMode((value) => !value)}
         />
 
+        {active === "Community" ? (
+          <main className="dashboard">
+            <CommunityPage
+              reports={addedReports}
+              imageUrls={reportImageUrls}
+              onOpen={setSelectedReport}
+              onUpload={() => navigate("Upload & Analyze")}
+            />
+          </main>
+        ) : active === "Settings" ? (
+          <main className="dashboard">
+            <SettingsPage
+              lightMode={lightMode}
+              onToggleTheme={() => setLightMode((value) => !value)}
+              tiles={tileProvider}
+              onTileProvider={setTileProvider}
+              reportCount={addedReports.length}
+              photoCount={Object.keys(reportImageUrls).length}
+              onExport={exportReports}
+              onClearData={() => void clearAllData()}
+            />
+          </main>
+        ) : (
         <main className="dashboard">
           <motion.section
             className="hero-banner"
@@ -821,6 +1069,7 @@ const stats = [
   <CivicMap
     reports={[...addedReports, ...reports]}
     onOpenReport={setSelectedReport}
+    tiles={tileProvider}
   />
 </section>
 
@@ -880,12 +1129,12 @@ const stats = [
                   </div>
                   <div className="impact-cell">
                   <span className="impact-icon purple"><Clock3 size={17} /></span>
-                  <div><strong>{inProgressReports}</strong><span>In Progress</span></div>
+                  <div><strong>{underReviewReports}</strong><span>Under review</span></div>
                   </div>
 
                   <div className="impact-cell">
                     <span className="impact-icon orange"><TriangleAlert size={17} /></span>
-                    <div><strong>{criticalReports}</strong><span>Critical</span></div>
+                    <div><strong>{attentionReports}</strong><span>Needs attention</span></div>
                   </div>
                 </div>
                 <div className="impact-note">
@@ -904,23 +1153,29 @@ const stats = [
                 </div>
 
                 <div className="activity-list">
-                  {activity.map((item, index) => (
-                    <div className="activity-item" key={item.title + item.time}>
-                      <span className={`activity-icon activity-${index}`}>
-                        {item.icon === "check" ? <CircleCheck size={15} /> :
-                          item.icon === "refresh" ? <Activity size={15} /> :
-                            <FileText size={15} />}
-                      </span>
-                      <div className="activity-copy">
-                        <strong>{item.title}</strong>
-                        <span>{item.detail}</span>
+                  {activityFeed.length === 0 ? (
+                    <p className="activity-empty">
+                      No activity yet — submit your first report.
+                    </p>
+                  ) : (
+                    activityFeed.map((item, index) => (
+                      <div className="activity-item" key={item.id}>
+                        <span className={`activity-icon activity-${index % 4}`}>
+                          {item.type === "resolved" ? <CircleCheck size={15} /> :
+                            item.type === "updated" ? <Activity size={15} /> :
+                              <FileText size={15} />}
+                        </span>
+                        <div className="activity-copy">
+                          <strong>{item.heading}</strong>
+                          <span>{item.detail}</span>
+                        </div>
+                        <time>{item.time}</time>
                       </div>
-                      <time>{item.time}</time>
-                    </div>
-                  ))}
+                    ))
+                  )}
                 </div>
                 <div className="activity-disclaimer">
-                  <ShieldCheck size={13} /> Example activity Â· not live submissions
+                  <ShieldCheck size={13} /> Live submissions from this workspace
                 </div>
               </section>
 
@@ -948,6 +1203,7 @@ const stats = [
             <span>Hackathon prototype Â· Not an official reporting service</span>
           </footer>
         </main>
+        )}
       </div>
 
       <AnimatePresence>
@@ -956,6 +1212,7 @@ const stats = [
             result={analysis}
             onClose={() => setAnalysis(null)}
             onSave={saveReport}
+            tiles={tileProvider}
           />
         )}
         {selectedReport && (
@@ -991,11 +1248,7 @@ const stats = [
               </div>
               <img
   className="modal-photo"
-  src={
-    selectedReport.image.startsWith("indexeddb:")
-      ? reportImageUrls[selectedReport.id] ?? ""
-      : selectedReport.image
-  }
+  src={resolveReportImage(selectedReport, reportImageUrls)}
   alt={`Evidence for ${selectedReport.title}`}
 />
               
@@ -1008,23 +1261,41 @@ const stats = [
 </div>
 
 {selectedReport.description !== undefined && (
-  <label className="field-label">
-    Update report status
-    <select
-      value={selectedReport.status}
-      onChange={(event) =>
-        updateReportStatus(
-          selectedReport.id,
-          event.target.value as IssueStatus,
-        )
-      }
-    >
-      <option value="In Progress">In Progress</option>
-      <option value="Resolved">Resolved</option>
-      <option value="High Priority">High Priority</option>
-      <option value="Critical">Critical</option>
-    </select>
-  </label>
+  <>
+    <label className="field-label">
+      Update report status
+      <select
+        value={selectedReport.status}
+        onChange={(event) =>
+          updateReportStatus(
+            selectedReport.id,
+            event.target.value as ReportStatus,
+          )
+        }
+      >
+        <option value="Submitted">Submitted</option>
+        <option value="Under Review">Under Review</option>
+        <option value="Resolved">Resolved</option>
+      </select>
+    </label>
+    <label className="field-label">
+      Update priority
+      <select
+        value={selectedReport.priority ?? "Medium"}
+        onChange={(event) =>
+          updateReportPriority(
+            selectedReport.id,
+            event.target.value as ReportPriority,
+          )
+        }
+      >
+        <option value="Low">Low</option>
+        <option value="Medium">Medium</option>
+        <option value="High">High</option>
+        <option value="Critical">Critical</option>
+      </select>
+    </label>
+  </>
 )}
               
 <p className="detail-copy">

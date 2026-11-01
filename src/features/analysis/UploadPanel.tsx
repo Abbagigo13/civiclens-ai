@@ -10,6 +10,7 @@ Upload,
 X,
 } from "lucide-react";
 import { motion } from "framer-motion";
+import { getApiKey } from "../../api/reports";
 
 export type AIAnalysis = {
 issueDetected: boolean;
@@ -64,20 +65,36 @@ try {
   const formData = new FormData();
   formData.append("image", file);
 
+  const apiKey = getApiKey();
   const response = await fetch(`${API_BASE_URL}/api/analyze`, {
     method: "POST",
     body: formData,
+    headers: apiKey ? { Authorization: `Bearer ${apiKey}` } : {},
   });
 
-  const payload: {
+  // A proxy or gateway failure (e.g. backend not running) has no
+  // JSON body, so read defensively instead of crashing on .json().
+  const rawBody = await response.text();
+  let payload: {
     success?: boolean;
     analysis?: AIAnalysis;
     error?: string;
-  } = await response.json();
+  } = {};
+
+  if (rawBody) {
+    try {
+      payload = JSON.parse(rawBody) as typeof payload;
+    } catch {
+      payload = {};
+    }
+  }
 
   if (!response.ok || !payload.success || !payload.analysis) {
     throw new Error(
-      payload.error || "AI analysis failed. Please try again.",
+      payload.error ||
+        (!response.ok && !rawBody
+          ? "Could not reach the analysis server. Start the backend with npm run server:dev and try again."
+          : "AI analysis failed. Please try again."),
     );
   }
 
@@ -86,9 +103,11 @@ try {
   console.error("CivicLens AI analysis error:", err);
 
   setError(
-    err instanceof Error
-      ? err.message
-      : "Could not analyze the image. Check your connection and try again.",
+    err instanceof TypeError
+      ? "Could not reach the backend server. Make sure it is running (npm run server:dev), then try again."
+      : err instanceof Error
+        ? err.message
+        : "Could not analyze the image. Check your connection and try again.",
   );
 } finally {
   setBusy(false);

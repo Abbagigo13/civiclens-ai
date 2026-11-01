@@ -10,7 +10,7 @@
   "preview": "vite preview",
   "server:dev": "tsx watch server/src/index.ts",
   "server:start": "tsx server/src/index.ts",
-  "test": "tsx --test server/src/services/metaAI.test.ts"
+  "test": "tsx --test server/src/services/metaAI.test.ts server/src/services/reportsStore.test.ts server/src/routes/analysis.test.ts server/src/middleware/auth.test.ts"
 },
   "dependencies": {
     "cors": "^2.8.6",

@@ -8,11 +8,14 @@ import {
 } from "react-leaflet";
 import { MapPin, LocateFixed } from "lucide-react";
 import type { CivicReport } from "../data/mockData";
+import { tileProviders } from "../utils/mapTiles";
+import type { TileProviderId } from "../utils/mapTiles";
 import "leaflet/dist/leaflet.css";
 
 type CivicMapProps = {
   reports: CivicReport[];
   onOpenReport?: (report: CivicReport) => void;
+  tiles?: TileProviderId;
 };
 
 type LocatedReport = CivicReport & {
@@ -40,8 +43,10 @@ function MapResizeHandler() {
 export default function CivicMap({
   reports,
   onOpenReport,
+  tiles = "carto",
 }: CivicMapProps) {
   const [showUnlocated, setShowUnlocated] = useState(false);
+  const provider = tileProviders[tiles] ?? tileProviders.carto;
 
   // Only reports with actual numeric coordinates appear as map markers.
   const locatedReports: LocatedReport[] = reports.filter((report) => {
@@ -94,8 +99,9 @@ export default function CivicMap({
         <MapResizeHandler />
 
         <TileLayer
-          attribution='&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">OpenStreetMap contributors</a>'
-          url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+          key={provider.id}
+          attribution={provider.attribution}
+          url={provider.url}
         />
 
         {locatedReports.map((report) => (
@@ -105,12 +111,12 @@ export default function CivicMap({
             radius={8}
             pathOptions={{
               color:
-                report.status === "Critical"
-                  ? "#ff646e"
-                  : report.status === "Resolved"
-                    ? "#45e2ac"
-                    : report.status === "High Priority"
-                      ? "#a78bfa"
+                report.status === "Resolved"
+                  ? "#45e2ac"
+                  : report.priority === "Critical"
+                    ? "#ff646e"
+                    : report.priority === "High"
+                      ? "#ffa94d"
                       : "#65a9ff",
               fillOpacity: 0.9,
               weight: 2,

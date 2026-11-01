@@ -13,3 +13,9 @@ dist/
 .DS_Store
 Thumbs.db
 test-infrastructure.png
+
+# Local SQLite database (report persistence)
+data/
+*.db
+*.db-wal
+*.db-shm

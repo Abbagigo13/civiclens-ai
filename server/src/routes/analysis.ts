@@ -1,9 +1,53 @@
-import { Router } from "express";
+import { Router, type Request, type Response } from "express";
 import multer from "multer";
 import rateLimit from "express-rate-limit";
+import { requireApiKey } from "../middleware/auth.js";
 import {
   analyzeInfrastructureImage,
+  type InfrastructureAnalysis,
 } from "../services/metaAI.js";
+
+export type AnalyzeImage = (
+  imageDataUrl: string,
+) => Promise<InfrastructureAnalysis>;
+
+// Factory so tests can inject a fake analyzer; production uses Meta AI.
+export function createAnalyzeHandler(
+  analyze: AnalyzeImage = analyzeInfrastructureImage,
+) {
+  return async (req: Request, res: Response) => {
+    if (!req.file) {
+      res.status(400).json({
+        error: "Upload an image to analyze.",
+      });
+      return;
+    }
+
+    try {
+      const imageDataUrl =
+        `data:${req.file.mimetype};base64,` +
+        req.file.buffer.toString("base64");
+
+      const analysis = await analyze(imageDataUrl);
+
+      res.json({
+        success: true,
+        model: process.env.META_MODEL || "muse-spark-1.3",
+        analysis,
+      });
+    } catch (error) {
+      console.error(
+        "Infrastructure analysis failed:",
+        error instanceof Error ? error.message : "Unknown error",
+      );
+
+      res.status(502).json({
+        error:
+          "Image analysis failed. Please try again shortly.",
+      });
+    }
+  };
+}
 
 const router = Router();
 
@@ -27,6 +71,25 @@ const allowedMimeTypes = new Set([
   "image/webp",
 ]);
 
+export const imageFileFilter: NonNullable<
+  multer.Options["fileFilter"]
+> = (
+  _req,
+  file,
+  callback,
+) => {
+  if (!allowedMimeTypes.has(file.mimetype)) {
+    const error: Error & { statusCode?: number } = new Error(
+      "Only JPG, PNG, and WebP images are supported.",
+    );
+    error.statusCode = 400;
+    callback(error);
+    return;
+  }
+
+  callback(null, true);
+};
+
 const upload = multer({
   storage: multer.memoryStorage(),
 
@@ -35,57 +98,15 @@ const upload = multer({
     files: 1,
   },
 
-  fileFilter: (_req, file, callback) => {
-    if (!allowedMimeTypes.has(file.mimetype)) {
-      const error: Error & { statusCode?: number } = new Error(
-        "Only JPG, PNG, and WebP images are supported.",
-      );
-      error.statusCode = 400;
-      callback(error);
-      return;
-    }
-
-    callback(null, true);
-  },
+  fileFilter: imageFileFilter,
 });
 
 router.post(
   "/analyze",
   analyzeLimiter,
+  requireApiKey,
   upload.single("image"),
-  async (req, res) => {
-    if (!req.file) {
-      res.status(400).json({
-        error: "Upload an image to analyze.",
-      });
-      return;
-    }
-
-    try {
-      const imageDataUrl =
-        `data:${req.file.mimetype};base64,` +
-        req.file.buffer.toString("base64");
-
-      const analysis =
-        await analyzeInfrastructureImage(imageDataUrl);
-
-      res.json({
-        success: true,
-        model: process.env.META_MODEL || "muse-spark-1.3",
-        analysis,
-      });
-    } catch (error) {
-      console.error(
-        "Infrastructure analysis failed:",
-        error instanceof Error ? error.message : "Unknown error",
-      );
-
-      res.status(502).json({
-        error:
-          "Image analysis failed. Please try again shortly.",
-      });
-    }
-  },
+  createAnalyzeHandler(),
 );
 
 export default router;

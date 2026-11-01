@@ -8,12 +8,15 @@ import {
 } from "react-leaflet";
 import type { LeafletMouseEvent, LatLngExpression } from "leaflet";
 import { Search, MapPin, LoaderCircle } from "lucide-react";
+import { tileProviders } from "../utils/mapTiles";
+import type { TileProviderId } from "../utils/mapTiles";
 import "leaflet/dist/leaflet.css";
 
 type LocationPickerProps = {
   latitude: number | null;
   longitude: number | null;
   onSelect: (latitude: number | null, longitude: number | null) => void;
+  tiles?: TileProviderId;
 };
 
 type SearchResult = {
@@ -54,7 +57,9 @@ export default function LocationPicker({
   latitude,
   longitude,
   onSelect,
+  tiles = "carto",
 }: LocationPickerProps) {
+  const provider = tileProviders[tiles] ?? tileProviders.carto;
   const [selected, setSelected] = useState<[number, number] | null>(
     latitude !== null && longitude !== null
       ? [latitude, longitude]
@@ -193,8 +198,9 @@ export default function LocationPicker({
         <MapRecenter position={selected} />
 
         <TileLayer
-          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap contributors</a>'
-          url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+          key={provider.id}
+          attribution={provider.attribution}
+          url={provider.url}
         />
 
         <MapClickHandler onSelect={selectLocation} />
