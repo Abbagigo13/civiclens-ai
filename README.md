@@ -175,3 +175,49 @@ committed), Compose passes it to the server and **visitors can use
 "Analyze image" without entering anything** — the key never reaches
 the browser. Without it, visitors simply file reports manually;
 everything else works exactly the same.
+
+## Host on Railway (API) + Vercel (web)
+
+Split deploy: Express API + SQLite on Railway, Vite web on Vercel.
+The frontend already reads `VITE_API_BASE_URL`; the API already
+reads `CLIENT_ORIGIN` (now comma-separated for multiple origins).
+
+**1. Railway — API first (Vercel needs its URL)**
+
+1. New Project → Deploy from GitHub repo → pick this repo.
+   `railway.json` selects the `Dockerfile`; health check is `/api/health`.
+2. Add a Volume mounted at `/data` (SQLite + photos survive deploys).
+3. Service variables (do **not** set `PORT` — Railway provides it):
+
+   ```env
+   MODEL_API_KEY=<optional, server-side only>
+   META_MODEL=muse-spark-1.3
+   REPORTS_DB_PATH=/data/civiclens.db
+   REPORTS_PHOTO_DIR=/data/photos
+   CLIENT_ORIGIN=http://localhost:5173
+   ```
+
+4. Settings → Networking → Generate Domain. Copy the `https://…` URL.
+
+**2. Vercel — web**
+
+1. New Project → Import the same GitHub repo. `vercel.json` sets
+   Vite, `npm run build`, `dist`, and the SPA fallback for `/dashboard`.
+2. Environment variable (Production):
+
+   ```env
+   VITE_API_BASE_URL=https://<your-railway-domain>
+   ```
+
+   No trailing slash and no `/api` suffix — the code appends `/api/…`.
+3. Deploy. Copy the production `https://…vercel.app` URL.
+
+**3. Wire CORS and redeploy**
+
+Back on Railway set `CLIENT_ORIGIN=https://<your-vercel-domain>`
+(add `,https://<custom-domain>` if you attach one) and redeploy.
+Verify the Railway `…/api/health` URL returns `"status":"ok"`,
+then file a test report from the Vercel site.
+
+CLI equivalents, if you prefer: `railway link && railway up` and
+`vercel --prod` from the repo root after `railway login` / `vercel login`.

@@ -14,8 +14,12 @@ const app = express();
 
 const port = Number(process.env.PORT || 3001);
 
-const clientOrigin =
-  process.env.CLIENT_ORIGIN || "http://localhost:5173";
+const clientOrigins = (
+  process.env.CLIENT_ORIGIN || "http://localhost:5173"
+)
+  .split(",")
+  .map((origin) => origin.trim())
+  .filter(Boolean);
 
 app.disable("x-powered-by");
 
@@ -29,7 +33,7 @@ app.use(
 
 app.use(
   cors({
-    origin: clientOrigin,
+    origin: clientOrigins,
   }),
 );
 
@@ -147,7 +151,7 @@ app.use(
 
 app.listen(port, () => {
   console.log(`CivicLens API running at http://localhost:${port}`);
-  console.log(`Frontend origin: ${clientOrigin}`);
+  console.log(`Frontend origins: ${clientOrigins.join(", ")}`);
 
   console.log(
     "Access: open — anyone can file, browse and update reports. " +
