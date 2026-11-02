@@ -1,0 +1,19 @@
+# Zero-configuration run for judges and demos.
+# No environment variables or keys to fill in: just `docker compose up --build`.
+# Optional: if the owner puts MODEL_API_KEY in a local .env file (never
+# committed), visitors also get AI photo analysis — the key stays on the
+# server and visitors never see or enter it. Without it, filing, browsing
+# and resolving reports work exactly the same, with manual filing instead.
+services:
+  civiclens:
+    build: .
+    env_file:
+      - path: .env
+        required: false
+    ports:
+      - "3001:3001"
+    volumes:
+      - civiclens-data:/data
+
+volumes:
+  civiclens-data:

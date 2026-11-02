@@ -141,13 +141,13 @@ without a key. Rate limits still apply.
 
 ## Documentation
 
-- [1. Product Requirements](docs/1.prd.md)
-- [2. Design System](docs/2.design_system.md)
-- [3. Code Style](docs/3.code_style.md)
-- [4. Architecture](docs/4.architecture.md)
-- [5. Security](docs/5.security.md)
-- [6. Testing](docs/6.testing.md)
-- [7. Agent / AI Coding Rules](docs/7.agents.md)
+- [1. Product Requirements](#docs/docs/1.prd.md)
+- [2. Design System](#docs/docs/2.design_system.md)
+- [3. Code Style](#docs/docs/3.code_style.md)
+- [4. Architecture](#docs/docs/4.architecture.md)
+- [5. Security](#docs/docs/5.security.md)
+- [6. Testing](#docs/docs/6.testing.md)
+- [7. Agent / AI Coding Rules](#docs/docs/7.agents.md)
 
 ## Run with Docker
 
@@ -155,14 +155,23 @@ The image builds the frontend and serves it together with the API on
 port 3001. Report data lives in a volume so it survives restarts.
 
 ```bash
-docker build -t civiclens-ai .
-docker run --rm -p 3001:3001 \
-  -e MODEL_API_KEY=your-key-here \
-  -v civiclens-data:/data \
-  civiclens-ai
+docker compose up --build
 ```
 
-Then open http://localhost:3001 in your browser. Access is open by
-design: anyone can file, browse and update reports without a key or
-account. `MODEL_API_KEY` only enables AI photo analysis on the
-server; without it, visitors can still file reports manually.
+Nothing to fill in — no keys, no `.env`, no flags. Then open
+http://localhost:3001 in your browser. Access is open by design:
+anyone can file, browse and update reports without a key or account.
+
+Equivalent without Compose:
+
+```bash
+docker build -t civiclens-ai .
+docker run --rm -p 3001:3001 -v civiclens-data:/data civiclens-ai
+```
+
+AI photo analysis is the only feature that needs a server-side key.
+If the owner puts `MODEL_API_KEY` in a local `.env` file (never
+committed), Compose passes it to the server and **visitors can use
+"Analyze image" without entering anything** — the key never reaches
+the browser. Without it, visitors simply file reports manually;
+everything else works exactly the same.
