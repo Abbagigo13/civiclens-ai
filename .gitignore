@@ -19,3 +19,7 @@ data/
 *.db
 *.db-wal
 *.db-shm
+# Reference screenshots (local only)
+Screenshot*.png
+image.png
+image copy.png

@@ -26,7 +26,7 @@ A photo can show a problem, but it does not automatically become a useful report
 5. Optionally highlight/segment relevant objects using SAM 3.1 if access is available.
 6. Let the user edit and confirm the draft.
 7. Save reports locally or in a configured database.
-8. Track statuses: `draft`, `submitted`, `under_review`, `in_progress`, `resolved`, `rejected`.
+8. Track statuses: `Submitted`, `Under Review`, `Resolved`.
 9. Provide a dashboard with filters and report details.
 
 ## Out of scope for the first version
@@ -39,17 +39,16 @@ A photo can show a problem, but it does not automatically become a useful report
 - Claims that a government agency has received or acted on a report without an actual integration
 - Paid APIs or cloud hosting as a requirement
 
-## Suggested stack
+## Stack (as built)
 
-- **Frontend:** React + Vite + TypeScript (JavaScript is acceptable if preferred)
-- **UI:** CSS Modules or plain CSS with design tokens
-- **Backend:** Python + FastAPI + Pydantic
-- **Storage:** SQLite for local development; local file storage for prototype images
-- **AI integration:** provider adapter for a vision-capable model; Meta models only when account access, API terms, and quota are confirmed
-- **Optional visual segmentation:** SAM 3.1 only after verifying practical access and hardware/API requirements
-- **Testing:** Pytest, Vitest, and React Testing Library
+- **Frontend:** React + Vite + TypeScript, plain CSS with custom-property tokens
+- **Backend:** Node.js + Express + TypeScript (`server/`)
+- **Storage:** SQLite (`node:sqlite`) for report metadata and status history; photos stored beside the database; browser IndexedDB keeps local copies
+- **AI integration:** Meta AI via the OpenAI-compatible API, server-side only (`MODEL_API_KEY`). Without it the app still works: visitors file reports manually
+- **Access:** open by design — no accounts or API keys for filing, browsing or updating reports. Rate limits still apply
+- **Testing:** Node's built-in test runner via `tsx` (`npm test`)
 
-No API key should be committed to the repository. The app must remain usable in demo mode with clearly labeled sample data if model access is unavailable.
+No API key should be committed to the repository.
 
 ## Architecture at a glance
 
@@ -60,19 +59,18 @@ Browser / React UI
   └── Reports dashboard
           |
           v
-FastAPI backend
+Express backend (server/)
   ├── Validation and upload limits
-  ├── Report service
-  ├── AI provider adapter
-  ├── Optional segmentation adapter
-  └── Repository layer
+  ├── Report service and SQLite store
+  ├── AI analysis adapter (Meta AI, lazy-initialised)
+  └── Rate limiting
           |
           +--> Vision model API (configured provider, optional)
           +--> SAM 3.1 adapter (optional)
           +--> SQLite + local uploads
 ```
 
-See [`docs/4.architecture.md`](docs/4.architecture.md) for the detailed design.
+See [`#docs/docs/4.architecture.md`](#docs/docs/4.architecture.md) for the detailed design.
 
 ## Repository structure
 
@@ -80,93 +78,50 @@ See [`docs/4.architecture.md`](docs/4.architecture.md) for the detailed design.
 civiclens-ai/
 ├── README.md
 ├── .env.example
-├── .gitignore
-├── docs/
-│   ├── 1.prd.md
-│   ├── 2.design_system.md
-│   ├── 3.code_style.md
-│   ├── 4.architecture.md
-│   ├── 5.security.md
-│   ├── 6.testing.md
-│   └── 7.agents.md
-├── frontend/
-│   ├── public/
-│   └── src/
-│       ├── components/
-│       ├── features/
-│       │   ├── analysis/
-│       │   └── reports/
-│       ├── lib/
-│       ├── styles/
-│       ├── types/
-│       └── App.tsx
-├── backend/
-│   └── app/
-│       ├── api/
-│       ├── core/
-│       ├── models/
-│       ├── schemas/
-│       ├── services/
-│       ├── repositories/
-│       ├── ai/
-│       └── main.py
-├── data/
-│   └── .gitkeep
-└── tests/
-    ├── frontend/
-    └── backend/
+├── index.html
+├── src/                  React frontend (pages, features, components)
+├── server/src/           Express API (routes, services, middleware)
+└── #docs/docs/           Design documents 1-7
 ```
 
-This is the target structure, not a claim that the application code has already been implemented.
+The application is implemented in this structure (the `#docs/` folder holds the design documents).
 
-## Local development plan
+## Local development
 
 ### Prerequisites
 
 - Git
 - Node.js LTS and npm
-- Python 3.11+ (use a version supported by selected dependencies)
-- VS Code or another editor
 
-### Backend (planned)
+### Run
 
-```powershell
-cd backend
-python -m venv .venv
-.\.venv\Scripts\Activate.ps1
-python -m pip install --upgrade pip
-pip install fastapi uvicorn[standard] pydantic-settings python-multipart pillow pytest httpx
-uvicorn app.main:app --reload
-```
-
-### Frontend (planned)
-
-```powershell
-cd frontend
+```bash
 npm install
-npm run dev
+npm run server:dev   # backend API on http://localhost:3001
+npm run dev          # frontend on http://localhost:5173
 ```
 
-The frontend and backend scaffolding must be created before these commands will work. We'll implement it incrementally after agreeing on these documents.
+Open http://localhost:5173 in your browser. Filing, browsing and
+resolving reports need no account or key. AI photo analysis needs
+`MODEL_API_KEY` in `.env`; without it, use "File it manually instead".
+
+Checks: `npm test` (server test suite), `npm run lint`, `npm run build`.
 
 ## Configuration
 
-Create a local `.env` file from `.env.example`. Keep secrets local and use placeholder values in examples.
+Copy `.env.example` to `.env` and fill in your own values. Never commit `.env`.
 
 ```env
-APP_ENV=development
-APP_HOST=127.0.0.1
-APP_PORT=8000
-DATABASE_URL=sqlite:///./civiclens.db
-UPLOAD_DIR=./data/uploads
-MAX_UPLOAD_MB=8
-AI_PROVIDER=mock
-AI_API_KEY=
-AI_MODEL=
-SEGMENTATION_ENABLED=false
+MODEL_API_KEY=       # Meta AI key, server-side only; optional (manual filing works without it)
+META_MODEL=muse-spark-1.3
+CLIENT_ORIGIN=http://localhost:5173
+PORT=3001
+REPORTS_DB_PATH=data/civiclens.db
+REPORTS_PHOTO_DIR=data/photos
 ```
 
-`AI_PROVIDER=mock` means deterministic demo analysis, not real model inference. The UI must clearly label mock output.
+Access is open by design: anyone can file, browse and update reports
+without a key. Rate limits still apply.
 
 ## Responsible AI and trust
 
