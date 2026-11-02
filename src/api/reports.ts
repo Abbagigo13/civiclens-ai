@@ -6,33 +6,6 @@ import type {
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "";
 
-const API_KEY_STORAGE = "civiclens-api-key";
-
-export function getApiKey(): string {
-  try {
-    return localStorage.getItem(API_KEY_STORAGE) ?? "";
-  } catch {
-    return "";
-  }
-}
-
-export function setApiKey(key: string): void {
-  try {
-    if (key.trim()) {
-      localStorage.setItem(API_KEY_STORAGE, key.trim());
-    } else {
-      localStorage.removeItem(API_KEY_STORAGE);
-    }
-  } catch {
-    // Private browsing: the key simply won't persist.
-  }
-}
-
-function authHeaders(): Record<string, string> {
-  const key = getApiKey();
-  return key ? { Authorization: `Bearer ${key}` } : {};
-}
-
 function httpError(message: string, status: number): Error {
   const error = new Error(message) as Error & { statusCode: number };
   error.statusCode = status;
@@ -115,16 +88,11 @@ export function toCivicReport(report: ServerReport): CivicReport {
   };
 }
 
-async function request<T>(
-  path: string,
-  init?: RequestInit,
-  authenticated = false,
-): Promise<T> {
+async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`${API_BASE_URL}${path}`, {
     ...init,
     headers: {
       "Content-Type": "application/json",
-      ...(authenticated ? authHeaders() : {}),
       ...init?.headers,
     },
   });
@@ -157,11 +125,10 @@ async function request<T>(
 
 export type ServerHealth = {
   online: boolean;
-  authEnabled: boolean;
 };
 
 export async function checkServerHealth(): Promise<ServerHealth> {
-  const offline = { online: false, authEnabled: false };
+  const offline = { online: false };
 
   try {
     const response = await fetch(`${API_BASE_URL}/api/health`, {
@@ -170,15 +137,9 @@ export async function checkServerHealth(): Promise<ServerHealth> {
 
     if (!response.ok) return offline;
 
-    const payload = (await response.json()) as {
-      status?: string;
-      auth?: string;
-    };
+    const payload = (await response.json()) as { status?: string };
 
-    return {
-      online: payload.status === "ok",
-      authEnabled: payload.auth === "enabled",
-    };
+    return { online: payload.status === "ok" };
   } catch {
     return offline;
   }
@@ -198,7 +159,6 @@ export async function createServerReport(
       method: "POST",
       body: JSON.stringify(input),
     },
-    true,
   );
 
   return toCivicReport(payload.report);
@@ -214,7 +174,7 @@ export async function updateServerReportStatus(
     `${API_BASE_URL}/api/reports/${encodeURIComponent(id)}/status`,
     {
       method: "PATCH",
-      headers: { "Content-Type": "application/json", ...authHeaders() },
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ status }),
     },
   );
@@ -244,7 +204,7 @@ export async function updateServerReportPriority(
     `${API_BASE_URL}/api/reports/${encodeURIComponent(id)}/priority`,
     {
       method: "PATCH",
-      headers: { "Content-Type": "application/json", ...authHeaders() },
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ priority }),
     },
   );
@@ -330,12 +290,8 @@ export async function uploadServerPhoto(
 
   const response = await fetch(
     `${API_BASE_URL}/api/reports/${encodeURIComponent(id)}/photo`,
-    { method: "POST", body, headers: authHeaders() },
+    { method: "POST", body },
   );
-
-  if (response.status === 401) {
-    throw httpError("Invalid or missing API key.", 401);
-  }
 
   return response.ok;
 }
@@ -343,7 +299,7 @@ export async function uploadServerPhoto(
 export async function deleteServerReport(id: string): Promise<void> {
   const response = await fetch(
     `${API_BASE_URL}/api/reports/${encodeURIComponent(id)}`,
-    { method: "DELETE", headers: authHeaders() },
+    { method: "DELETE" },
   );
 
   if (response.ok || response.status === 404) return;

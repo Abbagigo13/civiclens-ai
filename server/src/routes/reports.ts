@@ -3,7 +3,6 @@ import multer from "multer";
 import rateLimit from "express-rate-limit";
 import { getStore } from "../services/reportsStore.js";
 import { imageFileFilter } from "./analysis.js";
-import { requireApiKey } from "../middleware/auth.js";
 
 const router = Router();
 
@@ -45,7 +44,7 @@ const reportsLimiter = rateLimit({
 
 router.use(reportsLimiter);
 
-router.post("/reports", requireApiKey, (req, res) => {
+router.post("/reports", (req, res) => {
   const report = getStore().createReport(req.body);
 
   res.status(201).json({ report });
@@ -78,7 +77,7 @@ router.get("/reports/:id", (req, res) => {
   });
 });
 
-router.patch("/reports/:id/status", requireApiKey, (req, res) => {
+router.patch("/reports/:id/status", (req, res) => {
   const body = req.body as { status?: unknown };
   const id = requestId(req);
   const report =
@@ -92,7 +91,7 @@ router.patch("/reports/:id/status", requireApiKey, (req, res) => {
   res.json({ report });
 });
 
-router.patch("/reports/:id/priority", requireApiKey, (req, res) => {
+router.patch("/reports/:id/priority", (req, res) => {
   const body = req.body as { priority?: unknown };
   const id = requestId(req);
   const report =
@@ -108,7 +107,6 @@ router.patch("/reports/:id/priority", requireApiKey, (req, res) => {
 
 router.post(
   "/reports/:id/photo",
-  requireApiKey,
   photoUpload.single("photo"),
   (req, res) => {
     const id = req.params.id;
@@ -158,7 +156,7 @@ router.get("/reports/:id/photo", (req, res) => {
   res.send(photo.data);
 });
 
-router.delete("/reports/:id", requireApiKey, (req, res) => {
+router.delete("/reports/:id", (req, res) => {
   const id = requestId(req);
   const deleted = id === null ? false : getStore().deleteReport(id);
 

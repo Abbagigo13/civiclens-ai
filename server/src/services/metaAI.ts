@@ -1,19 +1,33 @@
 import OpenAI from "openai";
 
-const apiKey = process.env.MODEL_API_KEY;
+// The Meta client is created lazily so the server boots without a
+// model key: filing, browsing and resolving reports stay free and
+// open, and only AI photo analysis reports that it is unavailable.
+let metaClient: OpenAI | null = null;
 
-if (!apiKey) {
-  throw new Error(
-    "MODEL_API_KEY is missing. Add your Meta API key to the project .env file.",
-  );
+export function isAnalysisConfigured(): boolean {
+  return (process.env.MODEL_API_KEY ?? "").length > 0;
 }
 
-const metaClient = new OpenAI({
-  apiKey,
-  baseURL: "https://api.meta.ai/v1",
-  timeout: 60_000,
-  maxRetries: 1,
-});
+function getMetaClient(): OpenAI {
+  const apiKey = process.env.MODEL_API_KEY ?? "";
+
+  if (!apiKey) {
+    throw new Error(
+      "AI analysis is not configured on this server. " +
+        "You can still file your report manually.",
+    );
+  }
+
+  metaClient ??= new OpenAI({
+    apiKey,
+    baseURL: "https://api.meta.ai/v1",
+    timeout: 60_000,
+    maxRetries: 1,
+  });
+
+  return metaClient;
+}
 
 export type InfrastructureAnalysis = {
   issueDetected: boolean;
@@ -129,7 +143,7 @@ export function parseAnalysis(
 export async function analyzeInfrastructureImage(
   imageDataUrl: string,
 ): Promise<InfrastructureAnalysis> {
-  const response = await metaClient.chat.completions.create({
+  const response = await getMetaClient().chat.completions.create({
     model: process.env.META_MODEL || "muse-spark-1.3",
 
     messages: [

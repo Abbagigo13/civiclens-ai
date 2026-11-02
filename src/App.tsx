@@ -12,7 +12,7 @@ import {
   FileText,
   MapPin,
   ShieldCheck,
-  Sparkles,
+  ScanSearch,
   Target,
   TriangleAlert,
   X,
@@ -21,7 +21,6 @@ import {
 import { AnimatePresence, motion } from "framer-motion";
 import Sidebar from "./components/Sidebar";
 import Topbar from "./components/Topbar";
-import StatCard from "./components/StatCard";
 import UploadPanel, {
   type AIAnalysis,
 } from "./features/analysis/UploadPanel";
@@ -111,8 +110,7 @@ const [longitude, setLongitude] = useState<number | null>(result.longitude);
       >
         <div className="modal-header">
           <div>
-            <span className="eyebrow">LOCAL DEMONSTRATION</span>
-            <h2 id="analysis-title">Review your report</h2>
+                        <h2 id="analysis-title">Review your report</h2>
           </div>
           <button className="icon-button" onClick={onClose} aria-label="Close">
             <X size={19} />
@@ -120,7 +118,7 @@ const [longitude, setLongitude] = useState<number | null>(result.longitude);
         </div>
 
         <div className="modal-notice">
-  <Sparkles size={17} />
+  <ScanSearch size={17} />
   <span>
     Meta AI has analyzed your image. These findings are preliminary
     visual observations, not an official inspection. Review and edit
@@ -401,6 +399,26 @@ const featuredAnalysis =
 
 
   
+function handleManual(file: File, preview: string) {
+  setAnalysis({
+    file,
+    preview,
+    title: "",
+    category: "Other",
+    location: "",
+    latitude: null,
+    longitude: null,
+    description: "",
+    observation:
+      "Filed manually without AI analysis. Describe the problem in your own words — a reviewer will verify it.",
+    priority: "Medium",
+    issueDetected: true,
+    confidence: null,
+    visibleEvidence: [],
+    limitations: ["Filed manually without AI analysis — awaiting human review."],
+  });
+}
+
 function handleAnalyzed(
   file: File,
   preview: string,
@@ -434,7 +452,6 @@ function handleAnalyzed(
 async function saveReport(result: AnalysisResult) {
   let report: CivicReport;
   let offline = false;
-  let authRejected = false;
 
   try {
     report = await createServerReport({
@@ -454,8 +471,6 @@ async function saveReport(result: AnalysisResult) {
   } catch (error) {
     console.error("Could not save report to the server:", error);
     offline = true;
-    authRejected =
-      (error as { statusCode?: unknown }).statusCode === 401;
 
     const id = `CL-${Date.now().toString().slice(-6)}`;
 
@@ -504,11 +519,9 @@ async function saveReport(result: AnalysisResult) {
   setAnalysis(null);
   setActive("My Reports");
   setToast(
-    authRejected
-      ? "Server rejected the API key — saved in this browser only. Check Settings."
-      : offline
-        ? "Backend unreachable — saved in this browser only."
-        : "Report saved.",
+    offline
+      ? "Backend unreachable — saved in this browser only."
+      : "Report saved. Thank you — it is now visible to the response team.",
   );
 
   window.setTimeout(() => setToast(""), 3000);
@@ -543,10 +556,6 @@ function updateReportStatus(reportId: string, status: ReportStatus) {
     .catch((error) => {
       console.error(`Could not sync status for ${reportId}:`, error);
 
-      if ((error as { statusCode?: unknown }).statusCode === 401) {
-        setToast("Server rejected the API key. Check Settings.");
-        window.setTimeout(() => setToast(""), 3000);
-      }
     });
 
   setToast("Report status updated.");
@@ -569,10 +578,6 @@ function updateReportPriority(reportId: string, priority: ReportPriority) {
   void updateServerReportPriority(reportId, priority).catch((error) => {
     console.error(`Could not sync priority for ${reportId}:`, error);
 
-    if ((error as { statusCode?: unknown }).statusCode === 401) {
-      setToast("Server rejected the API key. Check Settings.");
-      window.setTimeout(() => setToast(""), 3000);
-    }
   });
 
   setToast("Report priority updated.");
@@ -589,10 +594,6 @@ async function deleteReport(report: CivicReport) {
   await deleteServerReport(report.id).catch((error) => {
     console.error(`Could not delete ${report.id} from the server:`, error);
 
-    if ((error as { statusCode?: unknown }).statusCode === 401) {
-      setToast("Server rejected the API key. Check Settings.");
-      window.setTimeout(() => setToast(""), 3000);
-    }
   });
 
   try {
@@ -726,36 +727,9 @@ const resolutionRate =
     ? Math.round((resolvedReports / totalReports) * 100)
     : 0;
 
-const stats = [
-  {
-    label: "Total reports",
-    value: totalReports,
-    change: "User-submitted reports",
-    icon: FileText,
-    tone: "blue" as const,
-  },
-  {
-    label: "Resolved",
-    value: resolvedReports,
-    change: `${resolutionRate}% resolution rate`,
-    icon: CircleCheck,
-    tone: "green" as const,
-  },
-  {
-    label: "Under review",
-    value: underReviewReports,
-    change: "Currently being tracked",
-    icon: Clock3,
-    tone: "purple" as const,
-  },
-  {
-    label: "Needs attention",
-    value: attentionReports,
-    change: "High or critical priority",
-    icon: TriangleAlert,
-    tone: "orange" as const,
-  },
-];
+const submittedReports = allDashboardReports.filter(
+  (report) => report.status === "Submitted",
+).length;
 
 
   return (
@@ -808,7 +782,7 @@ const stats = [
             <div className="hero-content">
               <span className="hero-kicker">
                 <span className="hero-kicker-dot" />
-                SEE YOUR COMMUNITY DIFFERENTLY
+                Kaduna pilot · Open to everyone · No account needed
               </span>
               <h1>
                 Turn everyday photos into
@@ -839,62 +813,116 @@ const stats = [
               </div>
             </div>
 
-            <div className="hero-art" aria-hidden="true">
-              <div className="hero-orb orb-one" />
-              <div className="hero-orb orb-two" />
-              <div className="hero-orb orb-three" />
-              <div className="hero-grid" />
-              <div className="hero-glass-card">
-                <span className="glass-icon"><Sparkles size={16} /></span>
-                <div>
-                  <strong>From observation</strong>
-                  <span>to community action</span>
-                </div>
-                <ArrowUpRight size={17} />
-              </div>
-              <div className="hero-art-caption">
-                <span>01 / OBSERVE</span>
-                <span>02 / UNDERSTAND</span>
-                <span>03 / ACT</span>
-              </div>
+            <div className="hero-latest">
+              <span className="hero-latest-label">Latest report</span>
+              {latestSavedReport ? (
+                <>
+                  <strong>{latestSavedReport.title}</strong>
+                  <span className="hero-latest-place">
+                    <MapPin size={14} /> {latestSavedReport.location} ·{" "}
+                    {latestSavedReport.time}
+                  </span>
+                  <span
+                    className={`hero-latest-status hero-status-${latestSavedReport.status.replace(" ", "-").toLowerCase()}`}
+                  >
+                    {latestSavedReport.status}
+                    {latestSavedReport.priority
+                      ? ` · ${latestSavedReport.priority} priority`
+                      : ""}
+                  </span>
+                  <button
+                    className="button-ghost"
+                    onClick={() => navigate("My Reports")}
+                  >
+                    Open the queue <ArrowUpRight size={15} />
+                  </button>
+                </>
+              ) : (
+                <>
+                  <strong>No reports filed yet</strong>
+                  <span className="hero-latest-place">
+                    Be the first to document a problem in your area.
+                  </span>
+                  <button
+                    className="button-ghost"
+                    onClick={() => navigate("Upload & Analyze")}
+                  >
+                    File a report <ArrowRight size={15} />
+                  </button>
+                </>
+              )}
             </div>
           </motion.section>
 
           <div className="demo-disclaimer">
             <span className="disclaimer-icon"><Activity size={15} /></span>
             <span>
-              <strong>Interactive prototype</strong> Â· Dashboard statistics
-              and sample reports are illustrative, not live civic data.
+              <strong>Open prototype</strong> · Dashboard statistics count
+              real filed reports. Sample reports are labelled “Sample”
+              in the list and never mixed into these numbers.
             </span>
-            <span className="disclaimer-status">LOCAL DEMO</span>
+            <span className="disclaimer-status">OPEN ACCESS</span>
           </div>
 
-          <motion.section
-            className="stats-grid"
-            variants={{ visible: { transition: { staggerChildren: 0.07 } } }}
-            initial="hidden"
-            animate="visible"
-          >
-            {stats.map((stat) => (
-              <motion.div
-                key={stat.label}
-                variants={fadeUp}
-                transition={{ duration: 0.35 }}
+          {totalReports === 0 && (
+            <div className="first-run-banner">
+              <div>
+                <strong>Nothing filed yet in this workspace.</strong>
+                <span>
+                  Photograph a problem near you and file the first
+                  report — it takes under a minute, no account needed.
+                </span>
+              </div>
+              <button
+                className="button-primary"
+                onClick={() => navigate("Upload & Analyze")}
               >
-                <StatCard {...stat} />
-              </motion.div>
-            ))}
-          </motion.section>
+                <Camera size={16} /> File the first report
+              </button>
+            </div>
+          )}
+
+          <section className="queue-summary" aria-label="Report queue summary">
+            <div className="queue-summary-item">
+              <strong>{submittedReports}</strong>
+              <span>Submitted, awaiting review</span>
+            </div>
+            <div className="queue-summary-item">
+              <strong>{underReviewReports}</strong>
+              <span>Under review</span>
+            </div>
+            <div className="queue-summary-item queue-summary-attention">
+              <strong>{attentionReports}</strong>
+              <span>High or critical, unresolved</span>
+            </div>
+            <div className="queue-summary-item">
+              <strong>{resolvedReports}</strong>
+              <span>Resolved</span>
+            </div>
+            <div className="queue-summary-progress">
+              <span>Resolution rate</span>
+              <div
+                className="queue-progress-track"
+                role="img"
+                aria-label={`Resolution rate ${resolutionRate} percent`}
+              >
+                <div
+                  className="queue-progress-fill"
+                  style={{ width: `${resolutionRate}%` }}
+                />
+              </div>
+              <strong>{resolutionRate}%</strong>
+            </div>
+          </section>
 
           <div className="main-grid">
             <div className="primary-column">
-              <UploadPanel onAnalyzed={handleAnalyzed} />
+              <UploadPanel onAnalyzed={handleAnalyzed} onManual={handleManual} />
 
               <section className="panel featured-panel">
                 <div className="panel-heading">
                   <div>
-                    <span className="eyebrow">VISUAL INTELLIGENCE</span>
-                    <h2>Featured analysis <span className="ai-tag"><Sparkles size={12} /> AI concept</span></h2>
+                                        <h2>Featured analysis <span className="ai-tag"><ScanSearch size={12} /> AI-assisted</span></h2>
                     <p>A preview of the evidence review experience.</p>
                   </div>
                   <button className="text-action" onClick={() => navigate("My Reports")}>
@@ -999,8 +1027,11 @@ const stats = [
 
       <div className="featured-empty-message">
         <Search size={32} />
-        <strong>No analysis yet</strong>
-        <span>Upload an infrastructure image to get started.</span>
+        <strong>No reports yet — file the first one</strong>
+        <span>
+          Upload a photo above. Analyze it with AI, or file it
+          manually in your own words.
+        </span>
       </div>
     </div>
 
@@ -1013,9 +1044,10 @@ const stats = [
       <h3>Your latest AI assessment</h3>
 
       <p className="featured-description">
-        Analyze a photo of a pothole, blocked drain, flooding,
-        or another infrastructure issue. CivicLens AI will
-        return preliminary observations for human review.
+        Take a photo of a pothole, blocked drain, flooding or
+        another infrastructure issue. File it manually, or let AI
+        draft the assessment first — a human reviews every report
+        either way.
       </p>
 
       <div className="feature-actions">
@@ -1057,8 +1089,7 @@ const stats = [
               <section className="panel map-panel" id="map-view">
   <div className="panel-heading">
     <div>
-      <span className="eyebrow">LOCAL AWARENESS</span>
-      <h2>Community issue map</h2>
+            <h2>Community issue map</h2>
       <p>Explore the map and review reports with geographic coordinates.</p>
     </div>
     <span className="map-demo-badge">
@@ -1076,45 +1107,60 @@ const stats = [
             </div>
 
             <aside className="right-column">
-              <section className="model-card">
-                <div className="model-card-header">
-                  <span className="model-logo"><Sparkles size={17} /></span>
+              <section className="panel queue-health">
+                <div className="panel-heading compact-heading">
                   <div>
-                    <span className="eyebrow">AI INFRASTRUCTURE</span>
-                    <h3>Built for visual intelligence.</h3>
+                                        <h2>What needs attention</h2>
+                  </div>
+                  <Activity size={18} className="muted" />
+                </div>
+                <div className="queue-health-rows">
+                  <div className="queue-health-row">
+                    <span>Open cases</span>
+                    <strong>{totalReports - resolvedReports}</strong>
+                  </div>
+                  <div className="queue-health-row">
+                    <span>High or critical, unresolved</span>
+                    <strong>{attentionReports}</strong>
+                  </div>
+                  <div className="queue-health-row">
+                    <span>Resolution rate</span>
+                    <strong>{resolutionRate}%</strong>
+                  </div>
+                  <div className="queue-health-row">
+                    <span>Most reported area</span>
+                    <strong>
+                      {allDashboardReports.length
+                        ? Object.entries(
+                            allDashboardReports.reduce<Record<string, number>>(
+                              (acc, report) => {
+                                acc[report.location] =
+                                  (acc[report.location] ?? 0) + 1;
+                                return acc;
+                              },
+                              {},
+                            ),
+                          ).sort((a, b) => b[1] - a[1])[0][0]
+                        : "—"}
+                    </strong>
                   </div>
                 </div>
-                <p className="model-card-copy">
-                  Designed to integrate multimodal reasoning and image segmentation.
+                <p className="queue-health-note">
+                  Counts real filed reports only. Sample reports are
+                  labelled and excluded.
                 </p>
-                <div className="model-item">
-  <span className="model-icon purple">
-    <Sparkles size={17} />
-  </span>
-
-  <div>
-    <strong>Muse Spark 1.3</strong>
-    <span>Live image analysis integration</span>
-  </div>
-
-  <span className="model-state">INTEGRATED</span>
-</div>
-                <div className="model-item">
-                  <span className="model-icon purple"><Sparkles size={17} /></span>
-                  <div><strong>Muse Spark</strong><span>Planned multimodal reasoning</span></div>
-                  <span className="model-state">PLANNED</span>
-                </div>
-                <div className="model-card-foot">
-                  <ShieldCheck size={14} />
-                  Provider access must be verified
-                </div>
+                <button
+                  className="text-action"
+                  onClick={() => navigate("My Reports")}
+                >
+                  Work the queue <ArrowUpRight size={15} />
+                </button>
               </section>
 
               <section className="panel impact-panel">
                 <div className="panel-heading compact-heading">
                   <div>
-                    <span className="eyebrow">AT A GLANCE</span>
-                    <h2>Community impact</h2>
+                                        <h2>Community impact</h2>
                   </div>
                   <Activity size={18} className="muted" />
                 </div>
@@ -1146,8 +1192,7 @@ const stats = [
               <section className="panel activity-panel">
                 <div className="panel-heading compact-heading">
                   <div>
-                    <span className="eyebrow">THE FEEDBACK LOOP</span>
-                    <h2>Recent activity</h2>
+                                        <h2>Recent activity</h2>
                   </div>
                   <span className="activity-live-dot" />
                 </div>
@@ -1181,8 +1226,7 @@ const stats = [
 
               <section className="next-step-card">
                 <span className="next-step-icon"><Zap size={19} /></span>
-                <span className="eyebrow">YOUR NEXT STEP</span>
-                <h3>Make the first observation count.</h3>
+                                <h3>Make the first observation count.</h3>
                 <p>Try your own image and explore how the report workflow feels.</p>
                 <button className="button-primary full-button" onClick={() => navigate("Upload & Analyze")}>
                   Start with a photo <ArrowRight size={15} />
@@ -1199,7 +1243,7 @@ const stats = [
 
           <footer className="app-footer">
             <div className="footer-brand"><span className="footer-eye">â—‰</span> CivicLens <b>AI</b></div>
-            <span>See it. Report it. Make it better.</span>
+            <span>Civic infrastructure reports for Kaduna</span>
             <span>Hackathon prototype Â· Not an official reporting service</span>
           </footer>
         </main>
@@ -1234,7 +1278,7 @@ const stats = [
             >
               <div className="modal-header">
                 <div>
-                  <span className="eyebrow">
+                  <span className="report-source">
   {selectedReport.id} ·{" "}
   {selectedReport.description !== undefined
     ? "USER SUBMISSION"

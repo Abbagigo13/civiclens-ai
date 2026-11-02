@@ -203,11 +203,11 @@ port 3001. Report data lives in a volume so it survives restarts.
 docker build -t civiclens-ai .
 docker run --rm -p 3001:3001 \
   -e MODEL_API_KEY=your-key-here \
-  -e API_KEY=your-operator-key \
   -v civiclens-data:/data \
   civiclens-ai
 ```
 
-Then open http://localhost:3001 in your browser. Setting `API_KEY`
-requires the operator key for analyze/create/update/delete endpoints —
-paste it in Settings → API access. Reads stay public.
+Then open http://localhost:3001 in your browser. Access is open by
+design: anyone can file, browse and update reports without a key or
+account. `MODEL_API_KEY` only enables AI photo analysis on the
+server; without it, visitors can still file reports manually.

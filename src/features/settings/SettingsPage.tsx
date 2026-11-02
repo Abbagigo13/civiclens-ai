@@ -2,8 +2,6 @@ import { useCallback, useEffect, useState } from "react";
 import {
   Check,
   Download,
-  KeyRound,
-  Lock,
   LockOpen,
   Map,
   Moon,
@@ -12,11 +10,7 @@ import {
   Sun,
   Trash2,
 } from "lucide-react";
-import {
-  checkServerHealth,
-  getApiKey,
-  setApiKey,
-} from "../../api/reports";
+import { checkServerHealth } from "../../api/reports";
 import { tileProviders } from "../../utils/mapTiles";
 import type { TileProviderId } from "../../utils/mapTiles";
 
@@ -46,15 +40,11 @@ export default function SettingsPage({
   onClearData,
 }: Props) {
   const [backend, setBackend] = useState<BackendState>("checking");
-  const [authEnabled, setAuthEnabled] = useState(false);
-  const [apiKey, setApiKeyInput] = useState(getApiKey);
-  const [savedFlash, setSavedFlash] = useState(false);
 
   const testBackend = useCallback(async () => {
     setBackend("checking");
     const health = await checkServerHealth();
     setBackend(health.online ? "online" : "offline");
-    setAuthEnabled(health.authEnabled);
   }, []);
 
   useEffect(() => {
@@ -64,7 +54,6 @@ export default function SettingsPage({
       const health = await checkServerHealth();
       if (cancelled) return;
       setBackend(health.online ? "online" : "offline");
-      setAuthEnabled(health.authEnabled);
     }
 
     void initialCheck();
@@ -79,8 +68,7 @@ export default function SettingsPage({
       <section className="panel">
         <div className="panel-heading">
           <div>
-            <span className="eyebrow">SETTINGS</span>
-            <h2>Workspace preferences</h2>
+                        <h2>Workspace preferences</h2>
             <p>Appearance, connections and local data controls.</p>
           </div>
         </div>
@@ -159,82 +147,10 @@ export default function SettingsPage({
 
         {backend === "online" && (
           <p className="settings-hint">
-            {authEnabled ? (
-              <>
-                <Lock size={14} /> Writes require the operator key.
-              </>
-            ) : (
-              <>
-                <LockOpen size={14} /> Writes are open — no server key
-                set.
-              </>
-            )}
+            <LockOpen size={14} /> Open access — anyone can file, browse
+            and update reports. No key or account needed.
           </p>
         )}
-      </section>
-
-      <section className="panel">
-        <div className="panel-heading">
-          <div>
-            <h2>API access</h2>
-            <p>
-              {authEnabled
-                ? "This server requires the operator key for writes."
-                : "Save the operator key here once the server sets one."}
-            </p>
-          </div>
-          <KeyRound size={18} className="muted" />
-        </div>
-
-        <form
-          className="api-key-form"
-          onSubmit={(event) => {
-            event.preventDefault();
-            setApiKey(apiKey);
-            setSavedFlash(true);
-            window.setTimeout(() => setSavedFlash(false), 2000);
-          }}
-        >
-          <label className="search-box">
-            <KeyRound size={16} />
-            <input
-              type="password"
-              value={apiKey}
-              onChange={(event) => setApiKeyInput(event.target.value)}
-              placeholder="Paste operator key…"
-              autoComplete="off"
-              aria-label="Operator API key"
-            />
-          </label>
-
-          <div className="settings-actions">
-            <button className="button-secondary" type="submit">
-              Save key
-            </button>
-            <button
-              className="button-secondary"
-              type="button"
-              disabled={!apiKey}
-              onClick={() => {
-                setApiKey("");
-                setApiKeyInput("");
-              }}
-            >
-              Clear
-            </button>
-          </div>
-        </form>
-
-        {savedFlash && (
-          <p className="settings-hint">
-            <Check size={14} /> Key saved in this browser.
-          </p>
-        )}
-
-        <p className="settings-hint">
-          Stored only in this browser — never in the codebase. Sent with
-          analyze, create, update, and delete requests.
-        </p>
       </section>
 
       <section className="panel">

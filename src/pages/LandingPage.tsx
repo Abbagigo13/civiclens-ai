@@ -7,16 +7,18 @@ import {
   Check,
   ChevronRight,
   CircleCheck,
-  Clock3,
+  Eye,
   FileSearch,
   Layers3,
   MapPin,
   Menu,
   ScanSearch,
   ShieldCheck,
+  TriangleAlert,
   X,
 } from "lucide-react";
-import CityNetworkCanvas from "./CityNetworkCanvas";
+import CityScene from "./CityScene";
+import { reports } from "../data/mockData";
 import "./LandingPage.css";
 
 const districts = [
@@ -91,6 +93,51 @@ const stages: LifecycleStage[] = [
   },
 ];
 
+const heroCases = [
+  {
+    id: "CL-1024",
+    title: "Flooded Road",
+    place: "Millennium City",
+    meta: "Critical · Flooding",
+    tone: "critical",
+    icon: "alert",
+  },
+  {
+    id: "CL-1027",
+    title: "Pothole on Airport Road",
+    place: "Kakuri",
+    meta: "High · 82% confidence",
+    tone: "review",
+    icon: "scan",
+  },
+  {
+    id: "CL-1026",
+    title: "Waste Accumulation",
+    place: "Sabon Gari",
+    meta: "Resolved · Verified",
+    tone: "resolved",
+    icon: "check",
+  },
+] as const;
+
+const evidence = {
+  visible: [
+    "Standing water across both lanes",
+    "Submerged kerb, debris at drain mouth",
+    "No visible barrier or warning sign",
+  ],
+  inference: [
+    "Likely blocked drainage upstream",
+    "Priority: Critical — road impassable",
+    "Confidence 82% on category: Flooding",
+  ],
+  limits: [
+    "Water depth cannot be measured from one photo",
+    "Cause below the surface is not visible",
+    "Needs reviewer confirmation before dispatch",
+  ],
+};
+
 const metrics = [
   { value: 2400, suffix: "+", label: "Reports structured for review" },
   { value: 38, suffix: "", label: "Evidence signals per analysis" },
@@ -118,29 +165,23 @@ const principles = [
 
 function useScrolled() {
   const [scrolled, setScrolled] = useState(false);
-
   useEffect(() => {
     function onScroll() {
       setScrolled(window.scrollY > 24);
     }
-
     onScroll();
     window.addEventListener("scroll", onScroll, { passive: true });
-
     return () => window.removeEventListener("scroll", onScroll);
   }, []);
-
   return scrolled;
 }
 
 function useInView<T extends HTMLElement>() {
   const ref = useRef<T | null>(null);
   const [inView, setInView] = useState(false);
-
   useEffect(() => {
     const node = ref.current;
     if (!node) return;
-
     const observer = new IntersectionObserver(
       (entries) => {
         if (entries[0].isIntersecting) {
@@ -150,11 +191,9 @@ function useInView<T extends HTMLElement>() {
       },
       { threshold: 0.3 },
     );
-
     observer.observe(node);
     return () => observer.disconnect();
   }, []);
-
   return { ref, inView };
 }
 
@@ -165,40 +204,33 @@ function CountUp({ target, suffix }: { target: number; suffix: string }) {
       : "0",
   );
   const { ref, inView } = useInView<HTMLSpanElement>();
-
   useEffect(() => {
     if (!inView) return;
-
-    if (
-      window.matchMedia("(prefers-reduced-motion: reduce)").matches
-    ) {
-      return;
-    }
-
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
     let frame = 0;
     const started = performance.now();
     const duration = 1400;
-
     function tick(now: number) {
       const progress = Math.min(1, (now - started) / duration);
       const eased = 1 - Math.pow(1 - progress, 3);
       setDisplay(Math.round(target * eased).toLocaleString());
-
-      if (progress < 1) {
-        frame = window.requestAnimationFrame(tick);
-      }
+      if (progress < 1) frame = window.requestAnimationFrame(tick);
     }
-
     frame = window.requestAnimationFrame(tick);
     return () => window.cancelAnimationFrame(frame);
   }, [inView, target]);
-
   return (
     <span ref={ref}>
       {display}
       {suffix}
     </span>
   );
+}
+
+function HeroCaseIcon({ kind }: { kind: string }) {
+  if (kind === "alert") return <TriangleAlert size={15} />;
+  if (kind === "check") return <CircleCheck size={15} />;
+  return <ScanSearch size={15} />;
 }
 
 export default function LandingPage() {
@@ -211,37 +243,25 @@ export default function LandingPage() {
   useEffect(() => {
     document.title =
       "CivicLens AI — From citizen report to resolved municipal action";
-
     const description =
       "CivicLens AI turns geotagged photos of infrastructure issues into structured, reviewable reports — analyzed by AI, verified by humans, tracked to resolution.";
-
     let meta = document.querySelector<HTMLMetaElement>(
       'meta[name="description"]',
     );
-
     if (!meta) {
       meta = document.createElement("meta");
       meta.name = "description";
       document.head.appendChild(meta);
     }
-
     meta.content = description;
   }, []);
 
-  // The lifecycle demo walks itself until the visitor takes over.
   useEffect(() => {
     if (stagePaused) return;
-
-    if (
-      window.matchMedia("(prefers-reduced-motion: reduce)").matches
-    ) {
-      return;
-    }
-
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
     const timer = window.setInterval(() => {
       setStageIndex((current) => (current + 1) % stages.length);
     }, 4200);
-
     return () => window.clearInterval(timer);
   }, [stagePaused]);
 
@@ -255,10 +275,10 @@ export default function LandingPage() {
       <header className={`cl-nav${scrolled ? " cl-nav-scrolled" : ""}`}>
         <nav className="cl-nav-links" aria-label="Sections">
           <a href="#lifecycle">Lifecycle</a>
-          <a href="#metrics">Metrics</a>
+          <a href="#evidence">Evidence</a>
+          <a href="#queue">Queue</a>
           <a href="#principles">Principles</a>
         </nav>
-
         <a className="cl-brand" href="#top" aria-label="CivicLens AI home">
           <span className="cl-brand-mark">
             <Layers3 size={19} strokeWidth={1.8} />
@@ -267,8 +287,8 @@ export default function LandingPage() {
             CivicLens <span>AI</span>
           </span>
         </a>
-
         <div className="cl-nav-right">
+          <span className="cl-nav-pilot">Pilot · Kaduna</span>
           <Link className="cl-nav-cta" to="/dashboard">
             Open command center <ArrowUpRight size={15} />
           </Link>
@@ -281,14 +301,16 @@ export default function LandingPage() {
             {menuOpen ? <X size={21} /> : <Menu size={21} />}
           </button>
         </div>
-
         {menuOpen && (
           <nav className="cl-mobile-menu" aria-label="Mobile sections">
             <a href="#lifecycle" onClick={() => setMenuOpen(false)}>
               Lifecycle <ChevronRight size={16} />
             </a>
-            <a href="#metrics" onClick={() => setMenuOpen(false)}>
-              Metrics <ChevronRight size={16} />
+            <a href="#evidence" onClick={() => setMenuOpen(false)}>
+              Evidence <ChevronRight size={16} />
+            </a>
+            <a href="#queue" onClick={() => setMenuOpen(false)}>
+              Queue <ChevronRight size={16} />
             </a>
             <a href="#principles" onClick={() => setMenuOpen(false)}>
               Principles <ChevronRight size={16} />
@@ -307,8 +329,29 @@ export default function LandingPage() {
       <main id="top">
         <section className="cl-hero">
           <div className="cl-hero-backdrop" aria-hidden="true">
-            <CityNetworkCanvas />
+            <CityScene />
             <div className="cl-hero-vignette" />
+          </div>
+
+          <div className="cl-hero-cases" aria-label="Live pilot cases">
+            {heroCases.map((item) => (
+              <Link
+                key={item.id}
+                to="/dashboard"
+                className={`cl-case cl-case-${item.tone}`}
+              >
+                <span className="cl-case-icon">
+                  <HeroCaseIcon kind={item.icon} />
+                </span>
+                <span className="cl-case-text">
+                  <strong>{item.title}</strong>
+                  <small>
+                    {item.id} · {item.place}
+                  </small>
+                  <small className="cl-case-meta">{item.meta}</small>
+                </span>
+              </Link>
+            ))}
           </div>
 
           <div className="cl-hero-copy">
@@ -316,28 +359,24 @@ export default function LandingPage() {
               <span className="cl-live-dot" />
               Live pilot · Kaduna metropolitan reports
             </p>
-
             <h1>
               From citizen report
               <br />
               to resolved municipal action
             </h1>
-
             <p className="cl-hero-description">
-              CivicLens AI turns geotagged photos of infrastructure
-              issues into structured, reviewable reports — analyzed
-              by AI, verified by humans, tracked to resolution.
+              CivicLens AI turns geotagged photos of potholes, blocked
+              drains and flooding into structured evidence — triaged by
+              AI, verified by a human, tracked until the fix is on record.
             </p>
-
             <div className="cl-hero-actions">
               <Link className="cl-button-primary" to="/dashboard">
                 Enter the platform <ArrowRight size={17} />
               </Link>
               <a className="cl-hero-scroll" href="#lifecycle">
-                See the lifecycle
+                Walk a report through its lifecycle
               </a>
             </div>
-
             <div className="cl-hero-signals">
               <span>
                 <Camera size={14} /> Photo-first reporting
@@ -352,7 +391,7 @@ export default function LandingPage() {
           </div>
 
           <div className="cl-districts">
-            <p>Built for municipal service operations</p>
+            <p>Built for municipal service operations · Kaduna</p>
             <div className="cl-marquee" aria-label="Pilot districts">
               <div className="cl-marquee-track">
                 {[...districts, ...districts].map((name, index) => (
@@ -366,14 +405,13 @@ export default function LandingPage() {
         <section className="cl-lifecycle" id="lifecycle">
           <div className="cl-lifecycle-heading">
             <p className="cl-section-kicker">The report lifecycle</p>
-            <h2>Built around real report lifecycles</h2>
+            <h2>One case file, from photo to repair</h2>
             <p>
-              Citizens submit issues, reviewers verify the evidence, and
-              teams resolve each case — with transparent status tracking
-              from start to finish. Walk the stages yourself.
+              Follow CL-1027 through the same four states every CivicLens
+              report travels. The demo advances on its own — pick a stage
+              to take over.
             </p>
           </div>
-
           <div className="cl-lifecycle-grid">
             <div
               className="cl-stage-tabs"
@@ -398,7 +436,6 @@ export default function LandingPage() {
                 </button>
               ))}
             </div>
-
             <article
               className="cl-stage-card"
               key={stage.id}
@@ -406,22 +443,19 @@ export default function LandingPage() {
             >
               <div className="cl-stage-card-head">
                 <div>
-                  <p className="cl-stage-card-id">CL-204913 · Roads</p>
+                  <p className="cl-stage-card-id">
+                    CL-1027 · Road infrastructure
+                  </p>
                   <h3>{stage.heading}</h3>
                 </div>
-                <span
-                  className={`cl-status-pill cl-status-${stage.id}`}
-                >
+                <span className={`cl-status-pill cl-status-${stage.id}`}>
                   {stage.status}
                 </span>
               </div>
-
               <p className="cl-stage-card-body">{stage.body}</p>
-
               <p className="cl-stage-card-location">
                 <MapPin size={14} /> Airport Road · Kakuri, Kaduna
               </p>
-
               <ol className="cl-stage-history">
                 {stage.history.map((entry) => (
                   <li key={entry.event}>
@@ -434,6 +468,122 @@ export default function LandingPage() {
                 ))}
               </ol>
             </article>
+          </div>
+        </section>
+
+        <section className="cl-evidence" id="evidence">
+          <div className="cl-evidence-heading">
+            <p className="cl-section-kicker">Inside an AI assessment</p>
+            <h2>What the model saw, what it inferred, what it cannot know</h2>
+            <p>
+              Every analysis is returned in three separated parts. Nothing
+              is merged into a single confident-sounding paragraph — the
+              reviewer sees the seams.
+            </p>
+          </div>
+          <div className="cl-evidence-grid">
+            <article className="cl-evidence-col">
+              <h3>
+                <Eye size={16} /> Visible evidence
+              </h3>
+              <ul>
+                {evidence.visible.map((line) => (
+                  <li key={line}>{line}</li>
+                ))}
+              </ul>
+            </article>
+            <article className="cl-evidence-col cl-evidence-col-mid">
+              <h3>
+                <ScanSearch size={16} /> Inference
+              </h3>
+              <ul>
+                {evidence.inference.map((line) => (
+                  <li key={line}>{line}</li>
+                ))}
+              </ul>
+              <div
+                className="cl-confidence"
+                role="img"
+                aria-label="Model confidence 82 percent"
+              >
+                <span>Confidence</span>
+                <div className="cl-confidence-track">
+                  <div className="cl-confidence-fill" />
+                </div>
+                <strong>82%</strong>
+              </div>
+            </article>
+            <article className="cl-evidence-col">
+              <h3>
+                <TriangleAlert size={16} /> Limitations
+              </h3>
+              <ul>
+                {evidence.limits.map((line) => (
+                  <li key={line}>{line}</li>
+                ))}
+              </ul>
+            </article>
+          </div>
+          <p className="cl-evidence-note">
+            Example assessment for CL-1024 · Flooded Road, Millennium City.
+            The same three-part structure is returned for every photo
+            analysed in the platform.
+          </p>
+        </section>
+
+        <section className="cl-queue" id="queue">
+          <div className="cl-queue-heading">
+            <div>
+              <p className="cl-section-kicker">The working queue</p>
+              <h2>What reviewers open on Monday morning</h2>
+            </div>
+            <Link className="cl-text-link" to="/dashboard">
+              Open the full queue <ArrowUpRight size={16} />
+            </Link>
+          </div>
+          <div className="cl-queue-table" role="table" aria-label="Recent reports">
+            <div className="cl-queue-row cl-queue-head" role="row">
+              <span>Report</span>
+              <span>Location</span>
+              <span>Priority</span>
+              <span>Status</span>
+              <span>Filed</span>
+            </div>
+            {reports.map((report) => (
+              <Link
+                key={report.id}
+                to="/dashboard"
+                className="cl-queue-row"
+                role="row"
+              >
+                <span className="cl-queue-report">
+                  <strong>{report.title}</strong>
+                  <small>
+                    {report.id} · {report.category}
+                  </small>
+                </span>
+                <span>{report.location}</span>
+                <span>
+                  {report.priority ? (
+                    <span
+                      className={`cl-priority cl-priority-${report.priority.toLowerCase()}`}
+                    >
+                      {report.priority}
+                    </span>
+                  ) : (
+                    <span className="cl-priority-none">—</span>
+                  )}
+                </span>
+                <span>
+                  <span
+                    className={`cl-queue-status cl-queue-status-${report.status.replace(" ", "-").toLowerCase()}`}
+                  >
+                    {report.status}
+                  </span>
+                </span>
+                <span className="cl-queue-time">{report.time}</span>
+              </Link>
+            ))}
           </div>
         </section>
 
@@ -467,7 +617,6 @@ export default function LandingPage() {
               Explore the workspace <ArrowUpRight size={16} />
             </Link>
           </div>
-
           <div className="cl-principle-list">
             {principles.map((principle) => (
               <article className="cl-principle" key={principle.number}>
@@ -493,8 +642,8 @@ export default function LandingPage() {
             <div>
               <h2>Better records begin with a clear observation.</h2>
               <p>
-                <Clock3 size={14} /> Photograph an issue, review the AI
-                assessment and save your first report in under a minute.
+                Photograph an issue, review the AI assessment and save
+                your first report in under a minute.
               </p>
             </div>
             <Link className="cl-button-primary" to="/dashboard">
@@ -522,3 +671,4 @@ export default function LandingPage() {
     </div>
   );
 }
+

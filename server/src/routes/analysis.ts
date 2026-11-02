@@ -1,9 +1,9 @@
 import { Router, type Request, type Response } from "express";
 import multer from "multer";
 import rateLimit from "express-rate-limit";
-import { requireApiKey } from "../middleware/auth.js";
 import {
   analyzeInfrastructureImage,
+  isAnalysisConfigured,
   type InfrastructureAnalysis,
 } from "../services/metaAI.js";
 
@@ -40,6 +40,15 @@ export function createAnalyzeHandler(
         "Infrastructure analysis failed:",
         error instanceof Error ? error.message : "Unknown error",
       );
+
+      if (!isAnalysisConfigured()) {
+        res.status(503).json({
+          error:
+            "AI analysis is not available on this server. " +
+            "You can still file your report manually.",
+        });
+        return;
+      }
 
       res.status(502).json({
         error:
@@ -104,7 +113,6 @@ const upload = multer({
 router.post(
   "/analyze",
   analyzeLimiter,
-  requireApiKey,
   upload.single("image"),
   createAnalyzeHandler(),
 );

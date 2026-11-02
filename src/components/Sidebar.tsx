@@ -64,13 +64,11 @@ export default function Sidebar({ active, onNavigate }: Props) {
           <div className="promo-icon">
             <Leaf size={23} />
           </div>
-          <span className="eyebrow">COMMUNITY FIRST</span>
-          <h3>
-            Better communities start with better visibility.
+                    <h3>
+            Every filed report, visible in one place.
           </h3>
           <p>
-            Every observation is a step toward safer, cleaner,
-            stronger neighborhoods.
+            Filed by residents, tracked until resolved.
           </p>
           <div className="city-silhouette" aria-hidden="true">
             <span />

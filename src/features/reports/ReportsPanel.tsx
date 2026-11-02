@@ -21,7 +21,7 @@ const filters = [
   "Under Review",
   "Resolved",
   "Needs attention",
-  "Demo Reports",
+  "Sample reports",
 ];
 
 export default function ReportsPanel({
@@ -55,7 +55,7 @@ export default function ReportsPanel({
     const matchesFilter =
       filter === "All reports"
         ? !isDemo
-        : filter === "Demo Reports"
+        : filter === "Sample reports"
           ? isDemo
           : filter === "Needs attention"
             ? needsAttention && !isDemo
@@ -71,8 +71,7 @@ export default function ReportsPanel({
     <section className="panel reports-panel" id="reports">
       <div className="panel-heading">
         <div>
-          <span className="eyebrow">COMMUNITY FEEDBACK LOOP</span>
-          <h2>Recent reports</h2>
+                    <h2>Recent reports</h2>
           <p>
             Browse submitted reports or explore clearly labelled examples.
           </p>
@@ -132,7 +131,7 @@ export default function ReportsPanel({
             return (
               <div key={`${report.reportSource}-${report.id}`}>
                 {report.reportSource === "demo" && (
-                  <span className="demo-label">DEMO EXAMPLE</span>
+                  <span className="demo-label">SAMPLE</span>
                 )}
 
                 <ReportCard
@@ -146,15 +145,15 @@ export default function ReportsPanel({
           <div className="empty-state">
             <Search size={23} />
             <strong>
-              {filter === "Demo Reports"
-                ? "No demo reports found"
+              {filter === "Sample reports"
+                ? "No sample reports found"
                 : filter === "All reports"
                   ? "No reports submitted yet"
                   : "No matching reports"}
             </strong>
             <span>
               {filter === "All reports"
-                ? "Upload an image and analyze an infrastructure issue to create your first report."
+                ? "Upload a photo and file it — with AI help or manually — to create your first report."
                 : "Try another search or filter."}
             </span>
           </div>
@@ -164,8 +163,8 @@ export default function ReportsPanel({
       <div className="reports-footer">
         <span>Showing {visibleReports.length} reports</span>
         <span className="demo-label">
-          {filter === "Demo Reports"
-            ? "DEMONSTRATION DATA"
+          {filter === "Sample reports"
+            ? "SAMPLE DATA"
             : filter === "All reports"
               ? "USER SUBMISSIONS"
               : "FILTERED REPORTS"}

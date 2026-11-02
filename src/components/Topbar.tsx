@@ -38,7 +38,7 @@ export default function Topbar({
       <div className="topbar-actions">
         <span className="environment-pill">
           <span className="online-dot" />
-          DEMO MODE
+          OPEN ACCESS
         </span>
 
         <button

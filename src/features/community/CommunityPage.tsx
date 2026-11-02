@@ -95,8 +95,7 @@ export default function CommunityPage({
       <section className="panel">
         <div className="panel-heading">
           <div>
-            <span className="eyebrow">COMMUNITY</span>
-            <h2>Reports from your neighbors</h2>
+                        <h2>Reports from your neighbors</h2>
             <p>
               Every report submitted through this workspace, shared for
               community visibility.
@@ -130,8 +129,7 @@ export default function CommunityPage({
         <section className="panel">
           <div className="panel-heading">
             <div>
-              <span className="eyebrow">NEIGHBORHOOD SPOTLIGHT</span>
-              <h2>Where reports come from</h2>
+                            <h2>Where reports come from</h2>
             </div>
           </div>
 
@@ -173,8 +171,7 @@ export default function CommunityPage({
         <section className="panel">
           <div className="panel-heading">
             <div>
-              <span className="eyebrow">COMMUNITY FEED</span>
-              <h2>Latest activity</h2>
+                            <h2>Latest activity</h2>
             </div>
           </div>
 

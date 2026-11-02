@@ -167,11 +167,108 @@
   inset: 0;
 }
 
-.cl-city-canvas {
+.cl-city-scene {
   position: absolute;
   inset: 0;
   width: 100%;
   height: 100%;
+}
+
+.cl-route-line {
+  animation: cl-route-dash 1.6s linear infinite;
+}
+
+@keyframes cl-route-dash {
+  to {
+    stroke-dashoffset: -24;
+  }
+}
+
+/* Floating live cases over the city */
+.cl-hero-cases {
+  position: absolute;
+  inset: 0;
+  max-width: 76rem;
+  margin: 0 auto;
+  pointer-events: none;
+  z-index: 2;
+}
+
+.cl-case {
+  position: absolute;
+  display: flex;
+  gap: 0.7rem;
+  align-items: flex-start;
+  width: 15.5rem;
+  padding: 0.85rem 1rem;
+  background: rgba(7, 17, 32, 0.82);
+  border: 1px solid var(--cl-line);
+  border-radius: 14px;
+  text-decoration: none;
+  pointer-events: auto;
+  backdrop-filter: blur(8px);
+  transition: border-color 0.2s ease, transform 0.2s ease;
+}
+
+.cl-case:hover {
+  transform: translateY(-2px);
+}
+
+.cl-case-critical {
+  top: 21%;
+  left: 2%;
+  border-color: rgba(255, 177, 94, 0.4);
+}
+.cl-case-critical:hover { border-color: var(--cl-amber); }
+.cl-case-review {
+  top: 15%;
+  right: 2%;
+  border-color: rgba(95, 215, 255, 0.4);
+}
+.cl-case-review:hover { border-color: var(--cl-signal); }
+.cl-case-resolved {
+  top: 46%;
+  right: 5%;
+  border-color: rgba(67, 211, 154, 0.4);
+}
+.cl-case-resolved:hover { border-color: var(--cl-ok); }
+
+.cl-case-icon {
+  display: grid;
+  place-items: center;
+  width: 1.9rem;
+  height: 1.9rem;
+  flex-shrink: 0;
+  border-radius: 8px;
+  background: rgba(95, 215, 255, 0.1);
+  color: var(--cl-signal);
+}
+.cl-case-critical .cl-case-icon { color: var(--cl-amber); background: rgba(255,177,94,0.1); }
+.cl-case-resolved .cl-case-icon { color: var(--cl-ok); background: rgba(67,211,154,0.1); }
+
+.cl-case-text {
+  display: flex;
+  flex-direction: column;
+  gap: 0.12rem;
+  min-width: 0;
+}
+.cl-case-text strong {
+  font-size: 0.86rem;
+  font-weight: 650;
+  line-height: 1.3;
+}
+.cl-case-text small {
+  font-size: 0.72rem;
+  color: var(--cl-faint);
+}
+.cl-case-meta { color: var(--cl-muted); font-weight: 600; }
+
+.cl-nav-pilot {
+  font-size: 0.74rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  color: var(--cl-faint);
+  white-space: nowrap;
 }
 
 .cl-hero-vignette {
@@ -610,6 +707,237 @@
   color: var(--cl-faint);
 }
 
+/* ---------- Evidence ---------- */
+
+.cl-evidence,
+.cl-queue {
+  max-width: 72rem;
+  margin: 0 auto;
+  padding: 5.5rem 1.5rem 1rem;
+}
+
+.cl-evidence-heading,
+.cl-queue-heading {
+  max-width: 44rem;
+  margin-bottom: 2.4rem;
+}
+
+.cl-queue-heading {
+  max-width: none;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 2rem;
+}
+
+.cl-queue-heading h2,
+.cl-evidence-heading h2 {
+  font-family: var(--cl-serif);
+  font-weight: 500;
+  font-size: clamp(1.9rem, 4vw, 2.8rem);
+  line-height: 1.15;
+  margin: 0 0 1rem;
+  text-wrap: balance;
+}
+
+.cl-evidence-heading > p:last-child {
+  margin: 0;
+  color: var(--cl-muted);
+  line-height: 1.7;
+  font-size: 1.02rem;
+}
+
+.cl-evidence-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  border: 1px solid var(--cl-line);
+  border-radius: 20px;
+  overflow: hidden;
+  background: var(--cl-panel);
+}
+
+.cl-evidence-col {
+  padding: 1.8rem 1.7rem;
+}
+
+.cl-evidence-col + .cl-evidence-col {
+  border-left: 1px solid var(--cl-line);
+}
+
+.cl-evidence-col-mid {
+  background: rgba(95, 215, 255, 0.04);
+}
+
+.cl-evidence-col h3 {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0 0 1.1rem;
+  font-size: 0.82rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--cl-signal);
+}
+
+.cl-evidence-col:last-child h3 { color: var(--cl-amber); }
+
+.cl-evidence-col ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+}
+
+.cl-evidence-col li {
+  font-size: 0.93rem;
+  line-height: 1.55;
+  color: var(--cl-muted);
+  padding-left: 1rem;
+  position: relative;
+}
+
+.cl-evidence-col li::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0.55em;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--cl-faint);
+}
+
+.cl-confidence {
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
+  margin-top: 1.5rem;
+  padding-top: 1.2rem;
+  border-top: 1px solid var(--cl-line);
+  font-size: 0.8rem;
+  color: var(--cl-faint);
+}
+
+.cl-confidence-track {
+  flex: 1;
+  height: 6px;
+  border-radius: 999px;
+  background: rgba(140, 190, 225, 0.15);
+  overflow: hidden;
+}
+
+.cl-confidence-fill {
+  width: 82%;
+  height: 100%;
+  border-radius: 999px;
+  background: var(--cl-signal);
+}
+
+.cl-confidence strong {
+  font-family: var(--cl-serif);
+  font-size: 1.15rem;
+  color: var(--cl-text);
+}
+
+.cl-evidence-note {
+  margin: 1.1rem 0 0;
+  font-size: 0.8rem;
+  color: var(--cl-faint);
+  line-height: 1.6;
+}
+
+/* ---------- Queue ---------- */
+
+.cl-queue-table {
+  border: 1px solid var(--cl-line);
+  border-radius: 20px;
+  overflow: hidden;
+  background: var(--cl-panel);
+}
+
+.cl-queue-row {
+  display: grid;
+  grid-template-columns: minmax(0, 2.2fr) minmax(0, 1.3fr) 0.8fr 1fr 0.8fr;
+  gap: 1rem;
+  align-items: center;
+  padding: 1.05rem 1.5rem;
+  text-decoration: none;
+  font-size: 0.9rem;
+  color: var(--cl-muted);
+}
+
+.cl-queue-row + .cl-queue-row {
+  border-top: 1px solid var(--cl-line);
+}
+
+a.cl-queue-row {
+  transition: background 0.2s ease;
+}
+
+a.cl-queue-row:hover {
+  background: rgba(95, 215, 255, 0.04);
+}
+
+.cl-queue-head {
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--cl-faint);
+  background: rgba(7, 17, 32, 0.6);
+}
+
+.cl-queue-report {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.cl-queue-report strong {
+  color: var(--cl-text);
+  font-size: 0.94rem;
+  font-weight: 650;
+}
+
+.cl-queue-report small {
+  font-size: 0.74rem;
+  color: var(--cl-faint);
+}
+
+.cl-priority {
+  font-size: 0.74rem;
+  font-weight: 700;
+  padding: 0.3rem 0.7rem;
+  border-radius: 999px;
+  border: 1px solid;
+  white-space: nowrap;
+}
+
+.cl-priority-critical { color: #ff8a7a; border-color: rgba(255,138,122,0.5); background: rgba(255,138,122,0.08); }
+.cl-priority-high { color: var(--cl-amber); border-color: rgba(255,177,94,0.5); background: rgba(255,177,94,0.08); }
+.cl-priority-medium { color: var(--cl-signal); border-color: rgba(95,215,255,0.5); background: rgba(95,215,255,0.08); }
+.cl-priority-low { color: var(--cl-muted); border-color: var(--cl-line); }
+.cl-priority-none { color: var(--cl-faint); }
+
+.cl-queue-status {
+  font-size: 0.8rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.cl-queue-status-under-review { color: var(--cl-amber); }
+.cl-queue-status-resolved { color: var(--cl-ok); }
+.cl-queue-status-submitted { color: var(--cl-signal); }
+
+.cl-queue-time {
+  font-size: 0.82rem;
+  color: var(--cl-faint);
+  white-space: nowrap;
+}
+
 /* ---------- Metrics ---------- */
 
 .cl-metrics {
@@ -832,7 +1160,29 @@
 
 /* ---------- Responsive ---------- */
 
+@media (max-width: 1180px) {
+  .cl-case { width: 13.5rem; }
+  .cl-case-resolved { display: none; }
+}
+
 @media (max-width: 1020px) {
+  .cl-evidence-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .cl-evidence-col + .cl-evidence-col {
+    border-left: none;
+    border-top: 1px solid var(--cl-line);
+  }
+
+  .cl-queue-row {
+    grid-template-columns: minmax(0, 2fr) minmax(0, 1.2fr) 1fr 0.8fr;
+  }
+
+  .cl-queue-row > :nth-child(3) {
+    display: none;
+  }
+
   .cl-lifecycle-grid {
     grid-template-columns: 1fr;
   }
@@ -917,6 +1267,44 @@
     padding-top: 6.5rem;
   }
 
+  .cl-hero-cases {
+    position: static;
+    display: flex;
+    flex-direction: column;
+    gap: 0.6rem;
+    padding: 0 0 1.2rem;
+    pointer-events: auto;
+  }
+
+  .cl-case,
+  .cl-case-resolved {
+    position: static;
+    display: flex;
+    width: 100%;
+  }
+
+  .cl-nav-pilot {
+    display: none;
+  }
+
+  .cl-queue-heading {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .cl-queue-row {
+    grid-template-columns: minmax(0, 2fr) 1fr;
+  }
+
+  .cl-queue-row > :nth-child(2),
+  .cl-queue-row > :nth-child(5) {
+    display: none;
+  }
+
+  .cl-queue-head {
+    display: none;
+  }
+
   .cl-metrics-grid {
     grid-template-columns: 1fr 1fr;
   }
@@ -989,7 +1377,8 @@
   .cl-live-dot,
   .cl-marquee-track,
   .cl-stage-progress,
-  .cl-stage-card {
+  .cl-stage-card,
+  .cl-route-line {
     animation: none;
   }
 

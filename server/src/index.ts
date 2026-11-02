@@ -9,7 +9,6 @@ import helmet from "helmet";
 
 import analysisRouter from "./routes/analysis.js";
 import reportsRouter from "./routes/reports.js";
-import { isAuthEnabled } from "./middleware/auth.js";
 
 const app = express();
 
@@ -38,7 +37,7 @@ app.get("/api/health", (_req, res) => {
   res.json({
     status: "ok",
     service: "CivicLens AI API",
-    auth: isAuthEnabled() ? "enabled" : "disabled",
+    access: "open",
     timestamp: new Date().toISOString(),
   });
 });
@@ -150,12 +149,8 @@ app.listen(port, () => {
   console.log(`CivicLens API running at http://localhost:${port}`);
   console.log(`Frontend origin: ${clientOrigin}`);
 
-  if (isAuthEnabled()) {
-    console.log("API key auth: enabled (writes require a key).");
-  } else {
-    console.warn(
-      "API_KEY is not set — write endpoints are open. " +
-        "Set API_KEY to require authentication.",
-    );
-  }
+  console.log(
+    "Access: open — anyone can file, browse and update reports. " +
+      "Rate limits still apply.",
+  );
 });

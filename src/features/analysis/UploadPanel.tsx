@@ -5,12 +5,11 @@ CircleCheck,
 FileImage,
 ImagePlus,
 LoaderCircle,
-Sparkles,
+ScanSearch,
 Upload,
 X,
 } from "lucide-react";
 import { motion } from "framer-motion";
-import { getApiKey } from "../../api/reports";
 
 export type AIAnalysis = {
 issueDetected: boolean;
@@ -25,11 +24,12 @@ limitations: string[];
 
 type Props = {
 onAnalyzed: (file: File, preview: string, analysis: AIAnalysis) => void;
+onManual?: (file: File, preview: string) => void;
 };
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "";
 
-export default function UploadPanel({ onAnalyzed }: Props) {
+export default function UploadPanel({ onAnalyzed, onManual }: Props) {
 const inputRef = useRef<HTMLInputElement>(null);
 const [file, setFile] = useState<File | null>(null);
 const [preview, setPreview] = useState("");
@@ -65,11 +65,9 @@ try {
   const formData = new FormData();
   formData.append("image", file);
 
-  const apiKey = getApiKey();
   const response = await fetch(`${API_BASE_URL}/api/analyze`, {
     method: "POST",
     body: formData,
-    headers: apiKey ? { Authorization: `Bearer ${apiKey}` } : {},
   });
 
   // A proxy or gateway failure (e.g. backend not running) has no
@@ -125,9 +123,9 @@ if (inputRef.current) inputRef.current.value = "";
 
 }
 
-return ( <section className="upload-card" id="upload"> <div className="upload-card-heading"> <div> <span className="eyebrow">AI-POWERED IMAGE ANALYSIS</span> <h2>Every image tells a story.</h2> <p>Turn visible infrastructure problems into reviewable reports.</p> </div>
+return ( <section className="upload-card" id="upload"> <div className="upload-card-heading"> <div> <h2>Report an infrastructure problem.</h2> <p>Turn visible infrastructure problems into reviewable reports.</p> </div>
     <div className="upload-sparkle">
-      <Sparkles size={21} />
+      <ScanSearch size={21} />
     </div>
   </div>
 
@@ -166,6 +164,16 @@ return ( <section className="upload-card" id="upload"> <div className="upload-ca
           >
             <X size={15} /> Remove
           </button>
+
+          {onManual && file && (
+            <button
+              className="button-secondary"
+              onClick={() => onManual(file, preview)}
+              disabled={busy}
+            >
+              File it manually instead
+            </button>
+          )}
 
           <button
             className="button-primary"
@@ -221,6 +229,9 @@ return ( <section className="upload-card" id="upload"> <div className="upload-ca
   {error && (
     <p className="form-error" role="alert">
       {error}
+      {onManual && file
+        ? " You can still file this report manually below — no AI needed."
+        : ""}
     </p>
   )}
 
@@ -230,8 +241,9 @@ return ( <section className="upload-card" id="upload"> <div className="upload-ca
     </span>
 
     <span>
-      Your image is sent to Meta AI through the CivicLens backend for
-      analysis. Review the result before saving your report.
+      Free to use — no account or key needed. Your image is only sent
+      for AI analysis if you choose “Analyze image”; manual filing
+      keeps it in this browser until you save.
     </span>
   </div>
 </section>

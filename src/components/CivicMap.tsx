@@ -112,12 +112,12 @@ export default function CivicMap({
             pathOptions={{
               color:
                 report.status === "Resolved"
-                  ? "#45e2ac"
+                  ? "#43d39a"
                   : report.priority === "Critical"
-                    ? "#ff646e"
+                    ? "#ff8a7a"
                     : report.priority === "High"
-                      ? "#ffa94d"
-                      : "#65a9ff",
+                      ? "#ffb15e"
+                      : "#5fd7ff",
               fillOpacity: 0.9,
               weight: 2,
             }}
@@ -169,6 +169,20 @@ export default function CivicMap({
       )}
 
       <div className="civic-map-footer">
+        <div className="map-legend" aria-label="Map pin legend">
+          <span>
+            <i style={{ background: "#5fd7ff" }} /> Open
+          </span>
+          <span>
+            <i style={{ background: "#ffb15e" }} /> High priority
+          </span>
+          <span>
+            <i style={{ background: "#ff8a7a" }} /> Critical
+          </span>
+          <span>
+            <i style={{ background: "#43d39a" }} /> Resolved
+          </span>
+        </div>
         <span>{locatedReports.length} mapped</span>
         <span>{unlocatedReports.length} awaiting coordinates</span>
       </div>
