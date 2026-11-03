@@ -12,6 +12,10 @@ import reportsRouter from "./routes/reports.js";
 
 const app = express();
 
+// Behind Railway's proxy the real client IP is in X-Forwarded-For;
+// trusting one proxy hop lets the rate limiter identify users correctly.
+app.set("trust proxy", 1);
+
 const port = Number(process.env.PORT || 3001);
 
 const clientOrigins = (

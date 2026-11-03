@@ -5,12 +5,30 @@ import OpenAI from "openai";
 // open, and only AI photo analysis reports that it is unavailable.
 let metaClient: OpenAI | null = null;
 
+const DEFAULT_META_MODEL = "muse-spark-1.3";
+
+// Env values pasted into hosts (Railway etc.) often arrive wrapped in
+// quotes or padded with spaces, which Meta then rejects as a different
+// key/model. Strip that wrapping so the value sent is the value meant.
+export function cleanEnvValue(raw: string | undefined): string {
+  return (raw ?? "").trim().replace(/^["']+|["']+$/g, "").trim();
+}
+
+export function getMetaModel(raw?: string): string {
+  const cleaned = cleanEnvValue(raw ?? process.env.META_MODEL);
+  return cleaned || DEFAULT_META_MODEL;
+}
+
+export function getModelApiKey(raw?: string): string {
+  return cleanEnvValue(raw ?? process.env.MODEL_API_KEY);
+}
+
 export function isAnalysisConfigured(): boolean {
-  return (process.env.MODEL_API_KEY ?? "").length > 0;
+  return getModelApiKey().length > 0;
 }
 
 function getMetaClient(): OpenAI {
-  const apiKey = process.env.MODEL_API_KEY ?? "";
+  const apiKey = getModelApiKey();
 
   if (!apiKey) {
     throw new Error(
@@ -144,7 +162,7 @@ export async function analyzeInfrastructureImage(
   imageDataUrl: string,
 ): Promise<InfrastructureAnalysis> {
   const response = await getMetaClient().chat.completions.create({
-    model: process.env.META_MODEL || "muse-spark-1.3",
+    model: getMetaModel(),
 
     messages: [
       {

@@ -5,7 +5,8 @@ import assert from "node:assert/strict";
 // the network, so a dummy key is enough for these unit tests.
 process.env.MODEL_API_KEY ??= "unit-test-dummy-key";
 
-const { parseAnalysis } = await import("./metaAI.js");
+const { parseAnalysis, getMetaModel, getModelApiKey } =
+  await import("./metaAI.js");
 
 function validPayload(overrides: Record<string, unknown> = {}) {
   return JSON.stringify({
@@ -20,6 +21,23 @@ function validPayload(overrides: Record<string, unknown> = {}) {
     ...overrides,
   });
 }
+
+describe("Meta env sanitization", () => {
+  it("strips wrapping quotes and spaces from the model name", () => {
+    assert.equal(getMetaModel(' "muse-spark-1.3" '), "muse-spark-1.3");
+    assert.equal(getMetaModel("muse-spark-1.3"), "muse-spark-1.3");
+  });
+
+  it("falls back to the default model when unset or blank", () => {
+    assert.equal(getMetaModel(""), "muse-spark-1.3");
+    assert.equal(getMetaModel(undefined), "muse-spark-1.3");
+  });
+
+  it("strips wrapping quotes and spaces from the API key", () => {
+    assert.equal(getModelApiKey(' "abc123" '), "abc123");
+    assert.equal(getModelApiKey(""), "");
+  });
+});
 
 describe("parseAnalysis", () => {
   it("keeps a valid analysis unchanged", () => {

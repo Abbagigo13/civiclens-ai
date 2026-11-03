@@ -3,6 +3,7 @@ import multer from "multer";
 import rateLimit from "express-rate-limit";
 import {
   analyzeInfrastructureImage,
+  getMetaModel,
   isAnalysisConfigured,
   type InfrastructureAnalysis,
 } from "../services/metaAI.js";
@@ -32,13 +33,14 @@ export function createAnalyzeHandler(
 
       res.json({
         success: true,
-        model: process.env.META_MODEL || "muse-spark-1.3",
+        model: getMetaModel(),
         analysis,
       });
     } catch (error) {
       console.error(
         "Infrastructure analysis failed:",
         error instanceof Error ? error.message : "Unknown error",
+        `(model: ${getMetaModel()})`,
       );
 
       if (!isAnalysisConfigured()) {
