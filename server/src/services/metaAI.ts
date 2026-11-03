@@ -292,6 +292,114 @@ export type ProtocolCall = (
   imageDataUrl: string,
 ) => Promise<string>;
 
+export class MetaApiError extends Error {
+  readonly status?: number;
+  readonly code?: string | null;
+  readonly param?: string | null;
+  readonly errorType?: string | null;
+  readonly protocol?: string;
+
+  constructor(
+    message: string,
+    options: {
+      status?: number;
+      code?: string | null;
+      param?: string | null;
+      errorType?: string | null;
+      protocol?: string;
+      cause?: unknown;
+    } = {},
+  ) {
+    super(message, { cause: options.cause });
+    this.name = "MetaApiError";
+    this.status = options.status;
+    this.code = options.code;
+    this.param = options.param;
+    this.errorType = options.errorType;
+    this.protocol = options.protocol;
+  }
+}
+
+export type ProtocolDiagnostic = {
+  protocol: "responses" | "messages";
+  message: string;
+  status?: number;
+  code?: string | null;
+  param?: string | null;
+  type?: string | null;
+};
+
+export function toProtocolDiagnostic(
+  protocol: "responses" | "messages",
+  error: unknown,
+): ProtocolDiagnostic {
+  const record =
+    typeof error === "object" && error !== null
+      ? (error as Record<string, unknown>)
+      : {};
+  // OpenAI SDK APIError copies code/param/type to the top level from
+  // the nested response body (`error.error`). Fall back to that nested
+  // body when the top-level fields are absent.
+  const nested =
+    typeof record.error === "object" && record.error !== null
+      ? (record.error as Record<string, unknown>)
+      : {};
+  const pick = (
+    top: unknown,
+    nestedValue: unknown,
+  ): string | null | undefined =>
+    typeof top === "string" || top === null
+      ? (top as string | null)
+      : typeof nestedValue === "string" || nestedValue === null
+        ? (nestedValue as string | null)
+        : undefined;
+  const status =
+    typeof record.status === "number" ? record.status : undefined;
+  const code = pick(record.code, nested.code);
+  const param = pick(record.param, nested.param);
+  const type = pick(record.errorType ?? record.type, nested.type);
+  return {
+    protocol,
+    message: error instanceof Error ? error.message : "unknown",
+    status,
+    code,
+    param,
+    type,
+  };
+}
+
+export class DualProtocolError extends Error {
+  readonly diagnostics: ProtocolDiagnostic[];
+  readonly responsesError: unknown;
+  readonly messagesError: unknown;
+  readonly errors: readonly [unknown, unknown];
+
+  constructor(
+    message: string,
+    diagnostics: ProtocolDiagnostic[],
+    cause: unknown,
+    responsesError?: unknown,
+  ) {
+    super(message, { cause });
+    this.name = "DualProtocolError";
+    this.diagnostics = diagnostics;
+    // Both underlying errors stay accessible; `cause` remains the
+    // Messages error for backward compatibility.
+    this.messagesError = cause;
+    this.responsesError = responsesError;
+    this.errors = [responsesError, cause];
+  }
+}
+
+function formatDiagnostic(diagnostic: ProtocolDiagnostic): string {
+  const parts: string[] = [];
+  if (diagnostic.status !== undefined) parts.push(`status=${diagnostic.status}`);
+  if (diagnostic.code !== undefined) parts.push(`code=${diagnostic.code ?? "null"}`);
+  if (diagnostic.param !== undefined) parts.push(`param=${diagnostic.param ?? "null"}`);
+  if (diagnostic.type !== undefined) parts.push(`type=${diagnostic.type ?? "null"}`);
+  return parts.length ? ` [${diagnostic.protocol}: ${parts.join(" ")}]` : "";
+}
+
 async function parseProtocolText(text: string): Promise<InfrastructureAnalysis> {
   if (!text.trim()) {
     throw new Error("Meta returned an empty analysis response.");
@@ -323,19 +431,24 @@ export async function analyzeWithProtocols(
       await calls.messages(model, imageDataUrl),
     );
   } catch (secondError) {
-    const first =
-      firstError instanceof Error ? firstError.message : "unknown";
-    const second =
-      secondError instanceof Error ? secondError.message : "unknown";
-    throw new Error(`${first}; messages: ${second}`, {
-      cause: secondError,
-    });
+    const diagnostics = [
+      toProtocolDiagnostic("responses", firstError),
+      toProtocolDiagnostic("messages", secondError),
+    ];
+    throw new DualProtocolError(
+      `${diagnostics[0].message}; messages: ${diagnostics[1].message}` +
+        diagnostics.map(formatDiagnostic).join(""),
+      diagnostics,
+      secondError,
+      firstError,
+    );
   }
 }
 
-async function createMessagesText(
+export async function createMessagesText(
   model: string,
   imageDataUrl: string,
+  fetchFn: typeof fetch = fetch,
 ): Promise<string> {
   const apiKey = getModelApiKey();
   if (!apiKey) {
@@ -345,11 +458,10 @@ async function createMessagesText(
     );
   }
 
-  const response = await fetch("https://api.meta.ai/v1/messages", {
+  const response = await fetchFn("https://api.meta.ai/v1/messages", {
     method: "POST",
     headers: {
-      "x-api-key": apiKey,
-      "anthropic-version": "2023-06-01",
+      Authorization: `Bearer ${apiKey}`,
       "content-type": "application/json",
     },
     body: JSON.stringify(buildMessagesRequest(model, imageDataUrl)),
@@ -358,17 +470,35 @@ async function createMessagesText(
 
   const raw = await response.text();
   if (!response.ok) {
-    let detail = raw.slice(0, 300);
+    let detail = raw.slice(0, 300) || "empty response body";
+    let code: string | null | undefined;
+    let param: string | null | undefined;
+    let errorType: string | null | undefined;
     try {
       const parsed = JSON.parse(raw) as {
-        error?: { message?: string };
+        error?: {
+          message?: string;
+          code?: string | null;
+          param?: string | null;
+          type?: string | null;
+        };
       };
       if (parsed.error?.message) detail = parsed.error.message;
+      code = parsed.error?.code;
+      param = parsed.error?.param;
+      errorType = parsed.error?.type;
     } catch {
       // keep raw slice
     }
-    throw new Error(
+    throw new MetaApiError(
       `Meta Messages request failed (${response.status}): ${detail}`,
+      {
+        status: response.status,
+        code,
+        param,
+        errorType,
+        protocol: "messages",
+      },
     );
   }
 

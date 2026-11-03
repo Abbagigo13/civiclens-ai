@@ -12,9 +12,15 @@ const {
   analyzeWithProtocols,
   buildMessagesRequest,
   buildResponsesRequest,
+  createMessagesText,
   extractMessagesText,
   extractResponsesText,
+  MetaApiError,
+  DualProtocolError,
+  toProtocolDiagnostic,
 } = await import("./metaAI.js");
+
+const { APIError } = await import("openai");
 
 function validPayload(overrides: Record<string, unknown> = {}) {
   return JSON.stringify({
@@ -145,6 +151,91 @@ describe("dual-protocol analysis router", () => {
     });
   });
 
+  it("preserves status and code from both protocols when both fail", async () => {
+    const responsesError = new MetaApiError("404 model missing", {
+      status: 404,
+      code: "model_not_found",
+      protocol: "responses",
+    });
+    const messagesError = new MetaApiError("400 bad image param", {
+      status: 400,
+      code: null,
+      param: "messages",
+      errorType: "invalid_request_error",
+      protocol: "messages",
+    });
+    await assert.rejects(
+      analyzeWithProtocols(
+        image,
+        {
+          responses: async () => {
+            throw responsesError;
+          },
+          messages: async () => {
+            throw messagesError;
+          },
+        },
+        "muse-spark-1.3",
+      ),
+      (error: unknown) => {
+        assert.ok(error instanceof Error);
+        const diagnostics = (
+          error as { diagnostics?: unknown }
+        ).diagnostics as {
+          protocol: string;
+          status?: number;
+          code?: string | null;
+          param?: string | null;
+          type?: string | null;
+          message: string;
+        }[];
+        assert.equal(diagnostics.length, 2);
+        assert.deepEqual(
+          diagnostics.map((d) => [d.protocol, d.status, d.code]),
+          [
+            ["responses", 404, "model_not_found"],
+            ["messages", 400, null],
+          ],
+        );
+        assert.equal(diagnostics[1].param, "messages");
+        assert.equal(diagnostics[1].type, "invalid_request_error");
+        assert.match(error.message, /404 model missing/);
+        assert.match(error.message, /400 bad image param/);
+        return true;
+      },
+    );
+  });
+
+  it("keeps both underlying protocol errors accessible", async () => {
+    const responsesError = new Error("responses boom");
+    const messagesError = new Error("messages boom");
+    await assert.rejects(
+      analyzeWithProtocols(
+        image,
+        {
+          responses: async () => {
+            throw responsesError;
+          },
+          messages: async () => {
+            throw messagesError;
+          },
+        },
+        "muse-spark-1.3",
+      ),
+      (error: unknown) => {
+        assert.ok(error instanceof DualProtocolError);
+        const dual = error as InstanceType<typeof DualProtocolError>;
+        assert.equal(dual.responsesError, responsesError);
+        assert.equal(dual.messagesError, messagesError);
+        assert.deepEqual(dual.errors, [responsesError, messagesError]);
+        // Backward compatibility: cause stays the Messages error.
+        assert.equal(dual.cause, messagesError);
+        assert.equal(dual.diagnostics.length, 2);
+        return true;
+      },
+    );
+  });
+
   it("throws with both protocol errors when both fail", async () => {
     await assert.rejects(
       analyzeWithProtocols(
@@ -161,6 +252,184 @@ describe("dual-protocol analysis router", () => {
       ),
       /responses boom.*messages boom/,
     );
+  });
+});
+
+describe("Messages API HTTP contract", () => {
+  const image = "data:image/png;base64,QUJD";
+
+  function stubFetch(status: number, body: string, capture?: (url: string, init: RequestInit) => void) {
+    return (async (url: string, init: RequestInit) => {
+      capture?.(url, init);
+      return {
+        ok: status >= 200 && status < 300,
+        status,
+        text: async () => body,
+      };
+    }) as unknown as typeof fetch;
+  }
+
+  it("sends Bearer auth and no Anthropic-only headers", async () => {
+    let seenUrl = "";
+    let seenInit: RequestInit | undefined;
+    const text = await createMessagesText(
+      "muse-spark-1.3",
+      image,
+      stubFetch(
+        200,
+        JSON.stringify({ content: [{ type: "text", text: validPayload() }] }),
+        (url, init) => {
+          seenUrl = url;
+          seenInit = init;
+        },
+      ),
+    );
+    assert.equal(seenUrl, "https://api.meta.ai/v1/messages");
+    const headers = (seenInit?.headers ?? {}) as Record<string, string>;
+    const headerNames = Object.keys(headers).map((h) => h.toLowerCase());
+    assert.equal(headers.Authorization, "Bearer unit-test-dummy-key");
+    assert.equal(headerNames.includes("x-api-key"), false);
+    assert.equal(headerNames.includes("anthropic-version"), false);
+    assert.equal(text, validPayload());
+  });
+
+  it("preserves HTTP 404 model_not_found status and code", async () => {
+    await assert.rejects(
+      createMessagesText(
+        "muse-spark-1.3",
+        image,
+        stubFetch(
+          404,
+          JSON.stringify({
+            error: {
+              message: "The model `muse-spark-1.3` does not exist or is not available",
+              type: "invalid_request_error",
+              param: null,
+              code: "model_not_found",
+            },
+          }),
+        ),
+      ),
+      (error: unknown) => {
+        assert.ok(error instanceof MetaApiError);
+        assert.equal((error as InstanceType<typeof MetaApiError>).status, 404);
+        assert.equal((error as InstanceType<typeof MetaApiError>).code, "model_not_found");
+        assert.match((error as Error).message, /404/);
+        assert.match((error as Error).message, /does not exist/);
+        return true;
+      },
+    );
+  });
+
+  it("preserves HTTP 400 invalid_request_error param", async () => {
+    await assert.rejects(
+      createMessagesText(
+        "muse-spark-1.3",
+        image,
+        stubFetch(
+          400,
+          JSON.stringify({
+            error: {
+              message: "`messages`: image source is invalid",
+              type: "invalid_request_error",
+              param: "messages",
+              code: null,
+            },
+          }),
+        ),
+      ),
+      (error: unknown) => {
+        assert.ok(error instanceof MetaApiError);
+        const e = error as InstanceType<typeof MetaApiError>;
+        assert.equal(e.status, 400);
+        assert.equal(e.code, null);
+        assert.equal(e.param, "messages");
+        assert.equal(e.errorType, "invalid_request_error");
+        return true;
+      },
+    );
+  });
+});
+
+describe("toProtocolDiagnostic with OpenAI SDK errors", () => {
+  const headers = new Headers({ "x-request-id": "req_test" });
+
+  it("extracts 404 model_not_found from a real SDK NotFoundError", () => {
+    const sdkError = APIError.generate(
+      404,
+      {
+        error: {
+          message:
+            "The model `muse-spark-1.3` does not exist or is not available",
+          type: "invalid_request_error",
+          param: null,
+          code: "model_not_found",
+        },
+      },
+      undefined,
+      headers,
+    );
+    const diagnostic = toProtocolDiagnostic("responses", sdkError);
+    assert.equal(diagnostic.protocol, "responses");
+    assert.equal(diagnostic.status, 404);
+    assert.equal(diagnostic.code, "model_not_found");
+    assert.equal(diagnostic.param, null);
+    assert.equal(diagnostic.type, "invalid_request_error");
+    assert.match(diagnostic.message, /404/);
+    assert.match(diagnostic.message, /does not exist/);
+  });
+
+  it("extracts 400 invalid_request_error param from a real SDK BadRequestError", () => {
+    const sdkError = APIError.generate(
+      400,
+      {
+        error: {
+          message: "`messages`: image source is invalid",
+          type: "invalid_request_error",
+          param: "messages",
+          code: null,
+        },
+      },
+      undefined,
+      headers,
+    );
+    const diagnostic = toProtocolDiagnostic("responses", sdkError);
+    assert.equal(diagnostic.status, 400);
+    assert.equal(diagnostic.code, null);
+    assert.equal(diagnostic.param, "messages");
+    assert.equal(diagnostic.type, "invalid_request_error");
+  });
+
+  it("falls back to nested error fields when top-level fields are absent", () => {
+    const nestedOnly = new Error("404 nested failure") as Error & {
+      status?: number;
+      error?: unknown;
+    };
+    nestedOnly.status = 404;
+    nestedOnly.error = {
+      message: "The model does not exist",
+      type: "invalid_request_error",
+      param: null,
+      code: "model_not_found",
+    };
+    const diagnostic = toProtocolDiagnostic("responses", nestedOnly);
+    assert.equal(diagnostic.status, 404);
+    assert.equal(diagnostic.code, "model_not_found");
+    assert.equal(diagnostic.param, null);
+    assert.equal(diagnostic.type, "invalid_request_error");
+  });
+
+  it("omits status and code for SDK connection errors", () => {
+    const sdkError = APIError.generate(
+      undefined,
+      undefined,
+      "Connection error.",
+      undefined,
+    );
+    const diagnostic = toProtocolDiagnostic("responses", sdkError);
+    assert.equal(diagnostic.status, undefined);
+    assert.equal(diagnostic.code, undefined);
+    assert.equal(diagnostic.type, undefined);
   });
 });
 

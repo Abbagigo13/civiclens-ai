@@ -126,6 +126,35 @@ describe("analyze route", () => {
     assert.match(receivedDataUrl, /^data:image\/png;base64,/);
   });
 
+  it("returns 503 when AI is not configured", async () => {
+    const previous = process.env.MODEL_API_KEY;
+    process.env.MODEL_API_KEY = "";
+    try {
+      const handler = createAnalyzeHandler(async () => {
+        throw new Error("AI analysis is not configured on this server.");
+      });
+      const { res, calls } = mockResponse();
+      await handler(
+        {
+          file: {
+            mimetype: "image/jpeg",
+            buffer: Buffer.from([1]),
+          },
+        } as unknown as Request,
+        res,
+      );
+      assert.equal(calls.status, 503);
+      assert.deepEqual(calls.body, {
+        error:
+          "AI analysis is not available on this server. " +
+          "You can still file your report manually.",
+      });
+    } finally {
+      if (previous === undefined) delete process.env.MODEL_API_KEY;
+      else process.env.MODEL_API_KEY = previous;
+    }
+  });
+
   it("maps analyzer failures to a sanitized 502", async () => {
     const handler = createAnalyzeHandler(async () => {
       throw new Error("model exploded with internal details");
