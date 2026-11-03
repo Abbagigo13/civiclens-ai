@@ -5,8 +5,16 @@ import assert from "node:assert/strict";
 // the network, so a dummy key is enough for these unit tests.
 process.env.MODEL_API_KEY ??= "unit-test-dummy-key";
 
-const { parseAnalysis, getMetaModel, getModelApiKey } =
-  await import("./metaAI.js");
+const {
+  parseAnalysis,
+  getMetaModel,
+  getModelApiKey,
+  analyzeWithProtocols,
+  buildMessagesRequest,
+  buildResponsesRequest,
+  extractMessagesText,
+  extractResponsesText,
+} = await import("./metaAI.js");
 
 function validPayload(overrides: Record<string, unknown> = {}) {
   return JSON.stringify({
@@ -36,6 +44,123 @@ describe("Meta env sanitization", () => {
   it("strips wrapping quotes and spaces from the API key", () => {
     assert.equal(getModelApiKey(' "abc123" '), "abc123");
     assert.equal(getModelApiKey(""), "");
+  });
+});
+
+describe("dual-protocol analysis router", () => {
+  const image = "data:image/png;base64,QUJD";
+
+  it("uses Responses output_text and sends image + reasoning effort", async () => {
+    const req = buildResponsesRequest("muse-spark-1.3", image) as {
+      model: string;
+      reasoning?: { effort?: string };
+      input: { content: { type: string; image_url?: string }[] }[];
+    };
+    assert.equal(req.model, "muse-spark-1.3");
+    assert.equal(req.reasoning?.effort, "low");
+    assert.equal(req.input[0].content[1].type, "input_image");
+    assert.equal(req.input[0].content[1].image_url, image);
+
+    let messagesCalls = 0;
+    const result = await analyzeWithProtocols(
+      image,
+      {
+        responses: async () => extractResponsesText({ output_text: validPayload() }),
+        messages: async () => {
+          messagesCalls += 1;
+          return "";
+        },
+      },
+      "muse-spark-1.3",
+    );
+    assert.equal(result.category, "Road Damage");
+    assert.equal(messagesCalls, 0);
+  });
+
+  it("extracts text from structured Responses and Messages content", () => {
+    assert.equal(
+      extractResponsesText({
+        output: [{ content: [{ type: "output_text", text: "hi" }] }],
+      }),
+      "hi",
+    );
+    assert.equal(
+      extractMessagesText({
+        content: [
+          { type: "tool_use" },
+          { type: "text", text: "hello" },
+        ],
+      }),
+      "hello",
+    );
+  });
+
+  it("falls back to Messages when Responses throws", async () => {
+    const result = await analyzeWithProtocols(
+      image,
+      {
+        responses: async () => {
+          throw new Error("404 model not found on responses");
+        },
+        messages: async () =>
+          extractMessagesText({
+            content: [{ type: "text", text: validPayload() }],
+          }),
+      },
+      "muse-spark-1.3",
+    );
+    assert.equal(result.title, "Pothole on residential street");
+  });
+
+  it("falls back to Messages on empty or non-JSON Responses content", async () => {
+    for (const bad of ["", "   ", "no json here"]) {
+      const result = await analyzeWithProtocols(
+        image,
+        {
+          responses: async () => bad,
+          messages: async () => validPayload(),
+        },
+        "muse-spark-1.3",
+      );
+      assert.equal(result.category, "Road Damage");
+    }
+  });
+
+  it("builds a Messages request with base64 image and no reasoning_effort", () => {
+    const req = buildMessagesRequest("muse-spark-1.3", image) as unknown as {
+      model: string;
+      messages: { content: Record<string, unknown>[] }[];
+    };
+    assert.equal(req.model, "muse-spark-1.3");
+    assert.equal(JSON.stringify(req).includes("reasoning_effort"), false);
+    const img = req.messages[0].content[1] as {
+      type: string;
+      source: { type: string; media_type: string; data: string };
+    };
+    assert.equal(img.type, "image");
+    assert.deepEqual(img.source, {
+      type: "base64",
+      media_type: "image/png",
+      data: "QUJD",
+    });
+  });
+
+  it("throws with both protocol errors when both fail", async () => {
+    await assert.rejects(
+      analyzeWithProtocols(
+        image,
+        {
+          responses: async () => {
+            throw new Error("responses boom");
+          },
+          messages: async () => {
+            throw new Error("messages boom");
+          },
+        },
+        "muse-spark-1.3",
+      ),
+      /responses boom.*messages boom/,
+    );
   });
 });
 
