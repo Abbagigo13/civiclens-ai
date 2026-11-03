@@ -950,6 +950,11 @@ a { color: inherit; text-decoration: none; }
   outline: none;
 }
 
+.location-candidates { margin: 0 0 12px; padding: 0; list-style: none; border: 1px solid rgba(130, 154, 207, 0.2); border-radius: 9px; overflow: hidden; }
+.location-candidates button { display: block; width: 100%; padding: 9px 12px; border: 0; border-bottom: 1px solid rgba(130, 154, 207, 0.12); background: rgba(130, 154, 207, 0.05); color: inherit; font: inherit; font-size: 12px; text-align: left; cursor: pointer; }
+.location-candidates li:last-child button { border-bottom: 0; }
+.location-candidates button:hover { background: rgba(130, 154, 207, 0.14); }
+
 .location-search-button {
   display: inline-flex;
   align-items: center;

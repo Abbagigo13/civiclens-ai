@@ -66,7 +66,6 @@ Express backend (server/)
   └── Rate limiting
           |
           +--> Vision model API (configured provider, optional)
-          +--> SAM 3.1 adapter (optional)
           +--> SQLite + local uploads
 ```
 
@@ -135,9 +134,42 @@ without a key. Rate limits still apply.
 
 ## Project status
 
-**Stage:** planning and documentation.
+**Stage:** live production prototype on Render — see
+[Deploy on Render](#deploy-on-render).
 
-**Next milestone:** scaffold the repository, implement upload and report-review flow using mock analysis, then add the real model adapter once access is confirmed.
+## Key features
+
+- Photo upload with AI visual assessment (Meta Model API), with
+  editable human review before any report is saved
+- Interactive map: Nigerian location search (OpenStreetMap/Nominatim),
+  click-to-select coordinates, community report map
+- Report queue with status tracking (`Submitted`, `Under Review`,
+  `Resolved`), priorities, filters, and report details
+- Works without an AI key: manual filing is always available
+
+## Testing
+
+```bash
+npm test          # server test suite (tsx + node:test)
+npm run lint      # ESLint
+npm run build     # TypeScript + Vite production build
+```
+
+## Known limitations
+
+- AI analysis is optional: without `MODEL_API_KEY`, analysis is
+  unavailable and reports are filed manually.
+- Reports/photos persist only on a persistent disk (Render `/data`);
+  without one they are lost on redeploy/restart.
+- Access is open by design: no accounts; protection is rate limits
+  only. Upload validation trusts the multipart MIME type.
+- Location search depends on OpenStreetMap coverage in Nigeria;
+  users must always verify the pin on the map.
+- SAM 3.1 segmentation is not implemented.
+
+## Production
+
+**Live app:** https://civiclens-ai-jbup.onrender.com/dashboard
 
 ## Documentation
 
@@ -176,48 +208,36 @@ committed), Compose passes it to the server and **visitors can use
 the browser. Without it, visitors simply file reports manually;
 everything else works exactly the same.
 
-## Host on Railway (API) + Vercel (web)
+## Deploy on Render
 
-Split deploy: Express API + SQLite on Railway, Vite web on Vercel.
-The frontend already reads `VITE_API_BASE_URL`; the API already
-reads `CLIENT_ORIGIN` (now comma-separated for multiple origins).
+One Render Web Service hosts everything: Express serves the API
+and the built frontend from the same origin, so the frontend uses
+relative `/api` requests and no CORS wiring is needed. The repo's
+[render.yaml](render.yaml) (Blueprint spec) matches this setup;
+an existing dashboard-created Docker service is equivalent.
 
-**1. Railway — API first (Vercel needs its URL)**
-
-1. New Project → Deploy from GitHub repo → pick this repo.
-   `railway.json` selects the `Dockerfile`; health check is `/api/health`.
-2. Add a Volume mounted at `/data` (SQLite + photos survive deploys).
-3. Service variables (do **not** set `PORT` — Railway provides it):
+1. **Create the service:** Render → New → Web Service (or Blueprint
+   with `render.yaml`) → connect this repo. Render auto-detects
+   the `Dockerfile`; do not override build/start commands. The
+   image runs `npm run build` and starts
+   `npm run server:start` on Render's `PORT`.
+2. **Environment variables** (Render → service → Environment;
+   never commit secrets):
 
    ```env
    MODEL_API_KEY=<optional, server-side only>
    META_MODEL=muse-spark-1.3
+   CLIENT_ORIGIN=https://<your-app>.onrender.com
    REPORTS_DB_PATH=/data/civiclens.db
    REPORTS_PHOTO_DIR=/data/photos
-   CLIENT_ORIGIN=http://localhost:5173
    ```
 
-4. Settings → Networking → Generate Domain. Copy the `https://…` URL.
-
-**2. Vercel — web**
-
-1. New Project → Import the same GitHub repo. `vercel.json` sets
-   Vite, `npm run build`, `dist`, and the SPA fallback for `/dashboard`.
-2. Environment variable (Production):
-
-   ```env
-   VITE_API_BASE_URL=https://<your-railway-domain>
-   ```
-
-   No trailing slash and no `/api` suffix — the code appends `/api/…`.
-3. Deploy. Copy the production `https://…vercel.app` URL.
-
-**3. Wire CORS and redeploy**
-
-Back on Railway set `CLIENT_ORIGIN=https://<your-vercel-domain>`
-(add `,https://<custom-domain>` if you attach one) and redeploy.
-Verify the Railway `…/api/health` URL returns `"status":"ok"`,
-then file a test report from the Vercel site.
-
-CLI equivalents, if you prefer: `railway link && railway up` and
-`vercel --prod` from the repo root after `railway login` / `vercel login`.
+   Leave `VITE_API_BASE_URL` unset (same-origin `/api`) and do not
+   set `PORT` (Render provides it).
+3. **Persistence:** attach a Persistent Disk mounted at `/data`
+   (paid add-on, single instance) so the SQLite database and
+   photos survive redeploys. Without it, report data is ephemeral.
+4. **Health check:** `/api/health` must return `"status":"ok"`.
+5. **Verify:** open `/dashboard`, refresh the page (SPA fallback),
+   run one image analysis, file a test report, and confirm it is
+   still listed after a redeploy.

@@ -1,0 +1,28 @@
+# Render Blueprint: one Docker Web Service serves the API and the
+# built frontend from the same origin. Apply with "New > Blueprint"
+# or confirm the existing dashboard service matches this file.
+services:
+  - type: web
+    name: civiclens-ai
+    runtime: docker
+    healthCheckPath: /api/health
+    # A Persistent Disk at /data is required for reports/photos to
+    # survive redeploys (Render filesystems are otherwise ephemeral).
+    # Disks are a paid add-on and force a single instance.
+    disk:
+      name: civiclens-data
+      mountPath: /data
+      sizeGB: 1
+    envVars:
+      - key: MODEL_API_KEY
+        sync: false
+      - key: META_MODEL
+        value: muse-spark-1.3
+      - key: CLIENT_ORIGIN
+        value: https://civiclens-ai-jbup.onrender.com
+      - key: REPORTS_DB_PATH
+        value: /data/civiclens.db
+      - key: REPORTS_PHOTO_DIR
+        value: /data/photos
+      # Do NOT set VITE_API_BASE_URL: it is build-time only and the
+      # frontend uses same-origin relative /api requests on Render.

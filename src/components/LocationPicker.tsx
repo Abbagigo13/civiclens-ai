@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import {
   MapContainer,
   TileLayer,
-  Marker,
+  CircleMarker,
   useMap,
   useMapEvents,
 } from "react-leaflet";
@@ -41,6 +41,20 @@ function MapClickHandler({
   return null;
 }
 
+function MapResizeHandler() {
+  const map = useMap();
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      map.invalidateSize();
+    }, 150);
+
+    return () => window.clearTimeout(timer);
+  }, [map]);
+
+  return null;
+}
+
 function MapRecenter({ position }: { position: [number, number] | null }) {
   const map = useMap();
 
@@ -70,10 +84,35 @@ export default function LocationPicker({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [placeName, setPlaceName] = useState("");
+  const [candidates, setCandidates] = useState<SearchResult[]>([]);
 
   function selectLocation(lat: number, lng: number) {
     setSelected([lat, lng]);
     setPlaceName("");
+    setError("");
+    setCandidates([]);
+    onSelect(lat, lng);
+  }
+
+  function selectCandidate(result: SearchResult) {
+    const lat = Number(result.lat);
+    const lng = Number(result.lon);
+
+    if (
+      !Number.isFinite(lat) ||
+      !Number.isFinite(lng) ||
+      lat < -90 ||
+      lat > 90 ||
+      lng < -180 ||
+      lng > 180
+    ) {
+      setError("The location service returned invalid coordinates.");
+      return;
+    }
+
+    setSelected([lat, lng]);
+    setPlaceName(result.display_name);
+    setCandidates([]);
     setError("");
     onSelect(lat, lng);
   }
@@ -91,13 +130,16 @@ export default function LocationPicker({
     setBusy(true);
     setError("");
     setPlaceName("");
+    setCandidates([]);
 
     try {
       const params = new URLSearchParams({
         q: searchText,
         format: "jsonv2",
-        limit: "1",
+        limit: "5",
         countrycodes: "ng",
+        addressdetails: "1",
+        viewbox: "2.69,14.72,14.68,4.24",
       });
 
       const response = await fetch(
@@ -106,6 +148,7 @@ export default function LocationPicker({
           headers: {
             Accept: "application/json",
           },
+          signal: AbortSignal.timeout(8000),
         },
       );
 
@@ -122,29 +165,11 @@ export default function LocationPicker({
         return;
       }
 
-      const result = results[0];
-      const lat = Number(result.lat);
-      const lng = Number(result.lon);
-
-      if (
-        !Number.isFinite(lat) ||
-        !Number.isFinite(lng) ||
-        lat < -90 ||
-        lat > 90 ||
-        lng < -180 ||
-        lng > 180
-      ) {
-        throw new Error("The location service returned invalid coordinates.");
-      }
-
-      setSelected([lat, lng]);
-      setPlaceName(result.display_name);
-      onSelect(lat, lng);
-    } catch (searchError) {
+      // Never silently pick a result: the user confirms the place.
+      setCandidates(results);
+    } catch {
       setError(
-        searchError instanceof Error
-          ? searchError.message
-          : "Could not search for that location. Please try again.",
+        "Could not reach location search. Check your connection, or click the map to select the location.",
       );
     } finally {
       setBusy(false);
@@ -189,12 +214,25 @@ export default function LocationPicker({
         </p>
       )}
 
+      {candidates.length > 0 && (
+        <ul className="location-candidates">
+          {candidates.map((result) => (
+            <li key={`${result.lat},${result.lon},${result.display_name}`}>
+              <button type="button" onClick={() => selectCandidate(result)}>
+                {result.display_name}
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+
       <MapContainer
         center={selected ?? DEFAULT_CENTER}
         zoom={selected ? 16 : 12}
         className="location-picker-map"
         scrollWheelZoom
       >
+        <MapResizeHandler />
         <MapRecenter position={selected} />
 
         <TileLayer
@@ -205,7 +243,18 @@ export default function LocationPicker({
 
         <MapClickHandler onSelect={selectLocation} />
 
-        {selected && <Marker position={selected} />}
+        {selected && (
+          <CircleMarker
+            center={selected}
+            radius={9}
+            pathOptions={{
+              color: "#ffffff",
+              weight: 2,
+              fillColor: "#2f7bff",
+              fillOpacity: 1,
+            }}
+          />
+        )}
       </MapContainer>
 
       {selected ? (

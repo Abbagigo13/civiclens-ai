@@ -12,8 +12,9 @@ import reportsRouter from "./routes/reports.js";
 
 const app = express();
 
-// Behind Railway's proxy the real client IP is in X-Forwarded-For;
-// trusting one proxy hop lets the rate limiter identify users correctly.
+// Behind the host proxy (Render) the real client IP is in
+// X-Forwarded-For; trusting one proxy hop lets the rate limiter
+// identify users correctly.
 app.set("trust proxy", 1);
 
 const port = Number(process.env.PORT || 3001);
@@ -27,11 +28,25 @@ const clientOrigins = (
 
 app.disable("x-powered-by");
 
-// Security headers. The frontend calls this API cross-origin,
-// so resource policy must allow cross-origin responses.
+// Security headers. Helmet's default CSP only allows same-origin
+// images/connections, which blocks Leaflet tile images and the
+// Nominatim location search in production, so allow those hosts.
 app.use(
   helmet({
     crossOriginResourcePolicy: { policy: "cross-origin" },
+    contentSecurityPolicy: {
+      directives: {
+        imgSrc: [
+          "'self'",
+          "data:",
+          "blob:",
+          "https://*.basemaps.cartocdn.com",
+          "https://*.tile.openstreetmap.fr",
+          "https://tile.openstreetmap.org",
+        ],
+        connectSrc: ["'self'", "https://nominatim.openstreetmap.org"],
+      },
+    },
   }),
 );
 
@@ -156,6 +171,14 @@ app.use(
 app.listen(port, () => {
   console.log(`CivicLens API running at http://localhost:${port}`);
   console.log(`Frontend origins: ${clientOrigins.join(", ")}`);
+  const dbPath = process.env.REPORTS_DB_PATH || "data/civiclens.db";
+  console.log(`Reports database: ${dbPath}`);
+  if (process.env.NODE_ENV === "production" && !dbPath.startsWith("/data")) {
+    console.warn(
+      "Warning: reports database is not under /data; without a " +
+        "persistent disk this data is lost on redeploy/restart.",
+    );
+  }
 
   console.log(
     "Access: open — anyone can file, browse and update reports. " +
