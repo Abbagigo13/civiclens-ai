@@ -7,6 +7,8 @@ import {
   House,
   Map,
   Settings,
+  ShieldCheck,
+  TrendingUp,
   Users,
   Leaf,
 } from "lucide-react";
@@ -14,6 +16,7 @@ import {
 type Props = {
   active: string;
   onNavigate: (page: string) => void;
+  reportCount: number;
 };
 
 const navItems = [
@@ -22,10 +25,12 @@ const navItems = [
   { label: "My Reports", icon: FileText },
   { label: "Map View", icon: Map },
   { label: "Community", icon: Users },
+  { label: "Insights", icon: TrendingUp },
+  { label: "Moderation", icon: ShieldCheck },
   { label: "Settings", icon: Settings },
 ];
 
-export default function Sidebar({ active, onNavigate }: Props) {
+export default function Sidebar({ active, onNavigate, reportCount }: Props) {
   return (
     <aside className="sidebar">
       <button className="brand" onClick={() => onNavigate("Home")}>
@@ -52,8 +57,8 @@ export default function Sidebar({ active, onNavigate }: Props) {
           >
             <Icon size={19} />
             <span>{label}</span>
-            {label === "My Reports" && (
-              <span className="nav-count">5</span>
+            {label === "My Reports" && reportCount > 0 && (
+              <span className="nav-count">{reportCount}</span>
             )}
           </button>
         ))}

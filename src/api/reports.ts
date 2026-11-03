@@ -27,6 +27,10 @@ export type ServerReport = {
   visibleEvidence: string[];
   limitations: string[];
   hasPhoto: boolean;
+  hasAfterPhoto: boolean;
+  supportCount: number;
+  flagged: boolean;
+  hidden: boolean;
   createdAt: string;
   updatedAt: string;
 };
@@ -80,6 +84,12 @@ export function toCivicReport(report: ServerReport): CivicReport {
     image: `indexeddb:${report.id}`,
     description: report.description,
     hasPhoto: report.hasPhoto,
+    hasAfterPhoto: report.hasAfterPhoto,
+    supportCount: report.supportCount,
+    flagged: report.flagged,
+    hidden: report.hidden,
+    syncState: "synced" as const,
+    createdAt: report.createdAt,
     priority: report.priority ?? undefined,
     issueDetected: report.issueDetected ?? undefined,
     confidence: report.confidence,
@@ -229,9 +239,11 @@ export async function updateServerReportPriority(
 export type ActivityItem = {
   id: number;
   type: "created" | "updated" | "resolved";
+  reportId: string;
   heading: string;
   detail: string;
   time: string;
+  at: string;
 };
 
 type ServerActivity = {
@@ -251,6 +263,8 @@ export async function fetchActivity(): Promise<ActivityItem[]> {
 
   return payload.activity.map((item) => ({
     id: item.id,
+    reportId: item.reportId,
+    at: item.at,
     type: item.type,
     heading:
       item.type === "created"
@@ -296,10 +310,118 @@ export async function uploadServerPhoto(
   return response.ok;
 }
 
+export type ReportHistoryItem = {
+  id: number;
+  fromStatus: ReportStatus | null;
+  toStatus: ReportStatus;
+  changedAt: string;
+};
+
+export async function fetchReportHistory(
+  id: string,
+): Promise<ReportHistoryItem[]> {
+  const payload = await request<{
+    history: {
+      id: number;
+      fromStatus: ReportStatus | null;
+      toStatus: ReportStatus;
+      changedAt: string;
+    }[];
+  }>(`/api/reports/${encodeURIComponent(id)}`);
+
+  return payload.history ?? [];
+}
+
+// 404 resolves to null: local-only reports keep their local count.
+export async function supportServerReport(
+  id: string,
+): Promise<CivicReport | null> {
+  const response = await fetch(
+    `${API_BASE_URL}/api/reports/${encodeURIComponent(id)}/support`,
+    { method: "POST" },
+  );
+
+  if (response.status === 404) return null;
+
+  const payload = (await response.json()) as {
+    report?: ServerReport;
+    error?: string;
+  };
+
+  if (!response.ok || !payload.report) {
+    throw httpError(
+      payload.error || `Support failed (${response.status}).`,
+      response.status,
+    );
+  }
+
+  return toCivicReport(payload.report);
+}
+
+export function resolveAfterImage(report: CivicReport): string {
+  return report.hasAfterPhoto
+    ? `${API_BASE_URL}/api/reports/${encodeURIComponent(report.id)}/after-photo`
+    : "";
+}
+
+export async function uploadServerAfterPhoto(
+  id: string,
+  photo: Blob,
+): Promise<boolean> {
+  const body = new FormData();
+  body.append("photo", photo, "after.jpg");
+
+  const response = await fetch(
+    `${API_BASE_URL}/api/reports/${encodeURIComponent(id)}/after-photo`,
+    { method: "POST", body },
+  );
+
+  return response.ok;
+}
+
+export function moderatorHeaders(): Record<string, string> {
+  try {
+    const key = localStorage.getItem("civiclens-mod-key");
+    return key ? { "x-moderator-key": key } : {};
+  } catch {
+    return {};
+  }
+}
+
+export async function moderateServerReport(
+  id: string,
+  patch: { flagged?: boolean; hidden?: boolean },
+): Promise<CivicReport | null> {
+  const response = await fetch(
+    `${API_BASE_URL}/api/reports/${encodeURIComponent(id)}/moderation`,
+    {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", ...moderatorHeaders() },
+      body: JSON.stringify(patch),
+    },
+  );
+
+  if (response.status === 404) return null;
+
+  const payload = (await response.json()) as {
+    report?: ServerReport;
+    error?: string;
+  };
+
+  if (!response.ok || !payload.report) {
+    throw httpError(
+      payload.error || `Moderation failed (${response.status}).`,
+      response.status,
+    );
+  }
+
+  return toCivicReport(payload.report);
+}
+
 export async function deleteServerReport(id: string): Promise<void> {
   const response = await fetch(
     `${API_BASE_URL}/api/reports/${encodeURIComponent(id)}`,
-    { method: "DELETE" },
+    { method: "DELETE", headers: moderatorHeaders() },
   );
 
   if (response.ok || response.status === 404) return;

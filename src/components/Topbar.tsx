@@ -1,23 +1,26 @@
-
-import {
-  Bell,
-  ChevronDown,
-  Menu,
-  Moon,
-  Sun,
-} from "lucide-react";
+import { useState } from "react";
+import { Bell, Menu, Moon, Sun } from "lucide-react";
+import type { ActivityItem } from "../api/reports";
 
 type Props = {
   onMenuClick: () => void;
   lightMode: boolean;
   onToggleTheme: () => void;
+  notifications: ActivityItem[];
+  unseenCount: number;
+  onMarkSeen: () => void;
 };
 
 export default function Topbar({
   onMenuClick,
   lightMode,
   onToggleTheme,
+  notifications,
+  unseenCount,
+  onMarkSeen,
 }: Props) {
+  const [open, setOpen] = useState(false);
+
   return (
     <header className="topbar">
       <button
@@ -50,22 +53,43 @@ export default function Topbar({
           {lightMode ? <Moon size={19} /> : <Sun size={19} />}
         </button>
 
-        <button
-          className="icon-button notification-button"
-          aria-label="Notifications"
-          title="Notifications"
-        >
-          <Bell size={19} />
-          <span className="notification-dot" />
-        </button>
+        <div className="notification-wrap">
+          <button
+            className="icon-button notification-button"
+            aria-label="Status notifications"
+            title="Status notifications"
+            aria-expanded={open}
+            onClick={() => {
+              setOpen((value) => !value);
+              if (!open) onMarkSeen();
+            }}
+          >
+            <Bell size={19} />
+            {unseenCount > 0 && (
+              <span className="notification-badge">{unseenCount}</span>
+            )}
+          </button>
 
-        <div className="profile">
-          <div className="avatar">UI</div>
-          <div className="profile-copy">
-            <strong>Community Member</strong>
-            <span>Local contributor</span>
-          </div>
-          <ChevronDown size={15} className="muted" />
+          {open && (
+            <div className="notification-panel" role="menu">
+              <strong>Report updates</strong>
+              {notifications.length === 0 ? (
+                <p>
+                  No status changes yet. Updates to reports in this
+                  workspace appear here.
+                </p>
+              ) : (
+                notifications.map((item) => (
+                  <div className="notification-item" key={item.id}>
+                    <span>{item.heading}</span>
+                    <small>
+                      {item.detail} · {item.time}
+                    </small>
+                  </div>
+                ))
+              )}
+            </div>
+          )}
         </div>
       </div>
     </header>

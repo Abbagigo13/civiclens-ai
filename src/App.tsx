@@ -1,4 +1,4 @@
-﻿import { useEffect, useState } from "react";
+﻿import { Suspense, lazy, useEffect, useRef, useState } from "react";
 import { Search } from "lucide-react";
 import {
   Activity,
@@ -10,8 +10,13 @@ import {
   CircleCheck,
   Clock3,
   FileText,
+  Flag,
+  Link2,
   MapPin,
+  RefreshCw,
+  Share2,
   ShieldCheck,
+  ThumbsUp,
   ScanSearch,
   Target,
   TriangleAlert,
@@ -26,9 +31,11 @@ import UploadPanel, {
 } from "./features/analysis/UploadPanel";
 import ReportsPanel from "./features/reports/ReportsPanel";
 import CommunityPage from "./features/community/CommunityPage";
+import InsightsPage from "./features/insights/InsightsPage";
+import ModerationPage from "./features/moderation/ModerationPage";
 import SettingsPage from "./features/settings/SettingsPage";
-import CivicMap from "./components/CivicMap";
-import LocationPicker from "./components/LocationPicker";
+const CivicMap = lazy(() => import("./components/CivicMap"));
+const LocationPicker = lazy(() => import("./components/LocationPicker"));
 import { reports } from "./data/mockData";
 import { migrateCachedReport } from "./data/mockData";
 import type {
@@ -51,8 +58,13 @@ import {
   uploadServerPhoto,
   resolveReportImage,
   deleteServerReport,
+  fetchReportHistory,
+  supportServerReport,
+  resolveAfterImage,
+  uploadServerAfterPhoto,
+  moderateServerReport,
 } from "./api/reports";
-import type { ActivityItem } from "./api/reports";
+import type { ActivityItem, ReportHistoryItem } from "./api/reports";
 import { parseTileProvider } from "./utils/mapTiles";
 import type { TileProviderId } from "./utils/mapTiles";
 import "./index.css";
@@ -73,6 +85,10 @@ type AnalysisResult = {
   visibleEvidence: string[];
   limitations: string[];
 };
+
+function offlineReportId(): string {
+  return `CL-${Date.now().toString().slice(-6)}`;
+}
 
 const fadeUp = {
   hidden: { opacity: 0, y: 14 },
@@ -162,15 +178,17 @@ const [longitude, setLongitude] = useState<number | null>(result.longitude);
 
         <div className="field-label">
   Select the issue location on the map
-  <LocationPicker
-    latitude={latitude}
-    longitude={longitude}
-    tiles={tiles}
-    onSelect={(lat, lng) => {
-      setLatitude(lat);
-      setLongitude(lng);
-    }}
-  />
+  <Suspense fallback={<p className="activity-empty">Loading map…</p>}>
+    <LocationPicker
+      latitude={latitude}
+      longitude={longitude}
+      tiles={tiles}
+      onSelect={(lat, lng) => {
+        setLatitude(lat);
+        setLongitude(lng);
+      }}
+    />
+  </Suspense>
 </div>
 
         <label className="field-label">
@@ -297,6 +315,8 @@ useEffect(() => {
   }
 }, [addedReports]);
 
+const [activityFeed, setActivityFeed] = useState<ActivityItem[]>([]);
+
 // The server is the source of truth when reachable. Reports saved
 // while offline keep their local ids and are preserved alongside.
 useEffect(() => {
@@ -331,9 +351,28 @@ useEffect(() => {
   };
 }, []);
   const [selectedReport, setSelectedReport] = useState<CivicReport | null>(null);
+  const [historyState, setHistoryState] = useState<{
+    reportId: string;
+    items: ReportHistoryItem[];
+  } | null>(null);
+  const [afterImageUrls, setAfterImageUrls] = useState<Record<string, string>>({});
+  const [supportedIds, setSupportedIds] = useState<string[]>(() => {
+    try {
+      const saved = localStorage.getItem("civiclens-supported");
+      return saved ? (JSON.parse(saved) as string[]) : [];
+    } catch {
+      return [];
+    }
+  });
+  const [lastSeenAt, setLastSeenAt] = useState<string>(() => {
+    try {
+      return localStorage.getItem("civiclens-notif-seen") ?? "";
+    } catch {
+      return "";
+    }
+  });
   const [toast, setToast] = useState("");
-  const [activityFeed, setActivityFeed] = useState<ActivityItem[]>([]);
-  
+
 const [reportImageUrls, setReportImageUrls] = useState<Record<string, string>>({});
 
 useEffect(() => {
@@ -373,7 +412,284 @@ useEffect(() => {
   };
 }, [addedReports]);
 
-const latestSavedReport = addedReports[0] ?? null;
+// Deep link: /dashboard?report=CL-XXXXXX opens that report once loaded.
+useEffect(() => {
+  const target = new URLSearchParams(window.location.search).get("report");
+  if (!target || selectedReport) return;
+
+  const found =
+    addedReports.find((report) => report.id === target) ??
+    reports.find((report) => report.id === target);
+
+  if (!found) return;
+
+  const timer = window.setTimeout(() => setSelectedReport(found), 0);
+  return () => window.clearTimeout(timer);
+  // Only auto-open on first load / when reports first arrive.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+}, [addedReports]);
+
+useEffect(() => {
+  try {
+    localStorage.setItem("civiclens-supported", JSON.stringify(supportedIds));
+  } catch {
+    // Storage unavailable: support still works for this session.
+  }
+}, [supportedIds]);
+
+const reportHistory =
+  selectedReport && historyState?.reportId === selectedReport.id
+    ? historyState.items
+    : [];
+
+// Status timeline for the open report (server history when available).
+useEffect(() => {
+  if (!selectedReport) return;
+
+  let cancelled = false;
+  const reportId = selectedReport.id;
+
+  fetchReportHistory(reportId)
+    .then((history) => {
+      if (!cancelled) setHistoryState({ reportId, items: history });
+    })
+    .catch(() => {
+      if (!cancelled) setHistoryState({ reportId, items: [] });
+    });
+
+  // Load a locally stored after-photo, if any.
+  getReportImage(`${selectedReport.id}-after`)
+    .then((blob) => {
+      if (!blob || cancelled) return;
+      const url = URL.createObjectURL(blob);
+      setAfterImageUrls((current) => ({ ...current, [selectedReport.id]: url }));
+    })
+    .catch(() => undefined);
+
+  return () => {
+    cancelled = true;
+  };
+  // Refetch only when a different report is opened, not on status edits.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+}, [selectedReport?.id]);
+
+function showToast(message: string) {
+  setToast(message);
+  window.setTimeout(() => setToast(""), 3000);
+}
+
+function patchReport(reportId: string, patch: Partial<CivicReport>) {
+  setAddedReports((current) =>
+    current.map((report) =>
+      report.id === reportId ? { ...report, ...patch } : report,
+    ),
+  );
+  setSelectedReport((current) =>
+    current && current.id === reportId ? { ...current, ...patch } : current,
+  );
+}
+
+async function supportReport(report: CivicReport) {
+  if (supportedIds.includes(report.id)) return;
+
+  setSupportedIds((current) => [...current, report.id]);
+  patchReport(report.id, {
+    supportCount: (report.supportCount ?? 0) + 1,
+  });
+
+  try {
+    const saved = await supportServerReport(report.id);
+    if (saved) {
+      patchReport(report.id, { supportCount: saved.supportCount });
+    }
+  } catch (error) {
+    console.error("Could not sync support:", error);
+  }
+
+  showToast("Thanks — you've confirmed this issue too.");
+}
+
+function reportShareUrl(report: CivicReport): string {
+  return `${window.location.origin}/dashboard?report=${encodeURIComponent(report.id)}`;
+}
+
+async function copyReportLink(report: CivicReport) {
+  try {
+    await navigator.clipboard.writeText(reportShareUrl(report));
+    showToast("Report link copied.");
+  } catch {
+    showToast(reportShareUrl(report));
+  }
+}
+
+async function handleAfterPhoto(report: CivicReport, file: File) {
+  const localUrl = URL.createObjectURL(file);
+  setAfterImageUrls((current) => ({ ...current, [report.id]: localUrl }));
+  patchReport(report.id, { hasAfterPhoto: true });
+
+  try {
+    await saveReportImage(`${report.id}-after`, file);
+  } catch (error) {
+    console.error("Could not store after-photo locally:", error);
+  }
+
+  try {
+    const prepared = await preparePhoto(file);
+    await uploadServerAfterPhoto(report.id, prepared);
+  } catch (error) {
+    console.error("Could not sync after-photo:", error);
+  }
+
+  showToast("After photo saved.");
+}
+
+
+const visibleReports = addedReports.filter((report) => !report.hidden);
+const pendingReports = addedReports.filter(
+  (report) => report.syncState === "pending",
+);
+
+async function moderateReport(
+  report: CivicReport,
+  patch: { flagged?: boolean; hidden?: boolean },
+) {
+  patchReport(report.id, patch);
+
+  try {
+    const saved = await moderateServerReport(report.id, patch);
+    if (saved) patchReport(report.id, {
+      flagged: saved.flagged,
+      hidden: saved.hidden,
+    });
+  } catch (error) {
+    console.error("Could not sync moderation:", error);
+    if ((error as { statusCode?: number }).statusCode === 401) {
+      // Revert the optimistic change: the server refused it.
+      patchReport(report.id, {
+        flagged: report.flagged,
+        hidden: report.hidden,
+      });
+      showToast("Moderator key required — add it in Settings.");
+    }
+  }
+}
+
+const syncingRef = useRef(false);
+
+async function syncPendingReports() {
+  if (syncingRef.current) return;
+  const pending = addedReports.filter(
+    (report) => report.syncState === "pending",
+  );
+  if (pending.length === 0) return;
+
+  syncingRef.current = true;
+  let synced = 0;
+
+  try {
+    for (const local of pending) {
+      try {
+        const saved = await createServerReport({
+          title: local.title,
+          category: local.category,
+          location: local.location,
+          latitude: local.latitude ?? null,
+          longitude: local.longitude ?? null,
+          description: local.description ?? "",
+          status: local.status,
+          priority: local.priority ?? "Medium",
+          issueDetected: local.issueDetected ?? true,
+          confidence: local.confidence ?? null,
+          visibleEvidence: local.visibleEvidence ?? [],
+          limitations: local.limitations ?? [],
+        });
+
+        // Carry the locally stored photo across to the server id.
+        try {
+          const blob = await getReportImage(local.id);
+          if (blob) {
+            await saveReportImage(
+              saved.id,
+              new File([blob], "photo.jpg", {
+                type: blob.type || "image/jpeg",
+              }),
+            );
+            const prepared = await preparePhoto(
+              new File([blob], "photo.jpg", { type: blob.type || "image/jpeg" }),
+            );
+            saved.hasPhoto = await uploadServerPhoto(saved.id, prepared);
+            await deleteReportImage(local.id);
+          }
+        } catch (error) {
+          console.error("Could not migrate offline photo:", error);
+        }
+
+        if (local.status !== saved.status) {
+          await updateServerReportStatus(saved.id, local.status).catch(
+            () => null,
+          );
+          saved.status = local.status;
+        }
+        if ((local.supportCount ?? 0) > 0) saved.supportCount = local.supportCount;
+
+        setAddedReports((current) =>
+          current.map((report) => (report.id === local.id ? saved : report)),
+        );
+        setSelectedReport((current) =>
+          current && current.id === local.id ? saved : current,
+        );
+        synced += 1;
+      } catch (error) {
+        console.error(`Could not sync ${local.id}:`, error);
+      }
+    }
+  } finally {
+    syncingRef.current = false;
+  }
+
+  if (synced > 0) {
+    void refreshActivity();
+    showToast(
+      synced === pending.length
+        ? "Offline reports synced to the server."
+        : `Synced ${synced} of ${pending.length} offline reports.`,
+    );
+  }
+}
+
+// Retry the offline queue when connectivity returns.
+const syncPendingRef = useRef(syncPendingReports);
+
+useEffect(() => {
+  syncPendingRef.current = syncPendingReports;
+});
+
+useEffect(() => {
+  const onOnline = () => void syncPendingRef.current();
+  window.addEventListener("online", onOnline);
+  return () => window.removeEventListener("online", onOnline);
+}, []);
+
+const myReportIds = new Set(addedReports.map((report) => report.id));
+const notifications = activityFeed.filter(
+  (item) =>
+    myReportIds.has(item.reportId) && item.type !== "created",
+);
+const unseenNotifications = notifications.filter(
+  (item) => !lastSeenAt || item.at > lastSeenAt,
+).length;
+
+function markNotificationsSeen() {
+  const now = new Date().toISOString();
+  setLastSeenAt(now);
+  try {
+    localStorage.setItem("civiclens-notif-seen", now);
+  } catch {
+    // Session-only seen state still works.
+  }
+}
+
+const latestSavedReport = visibleReports[0] ?? null;
 
 const featuredAnalysis =
   analysis ??
@@ -449,7 +765,75 @@ function handleAnalyzed(
   });
 }
   
+function distanceMeters(
+  aLat: number,
+  aLng: number,
+  bLat: number,
+  bLng: number,
+): number {
+  const rad = (deg: number) => (deg * Math.PI) / 180;
+  const dLat = rad(bLat - aLat);
+  const dLng = rad(bLng - aLng);
+  const h =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(rad(aLat)) * Math.cos(rad(bLat)) * Math.sin(dLng / 2) ** 2;
+  return 6371000 * 2 * Math.asin(Math.sqrt(h));
+}
+
+// An open report is a likely duplicate when it is within 500m, or
+// shares the same location text and category.
+function findDuplicate(result: AnalysisResult): CivicReport | null {
+  const locationKey = result.location.trim().toLowerCase();
+  const categoryKey = result.category.trim().toLowerCase();
+
+  return (
+    addedReports.find((report) => {
+      if (report.hidden || report.status === "Resolved") return false;
+
+      if (
+        result.latitude !== null &&
+        result.longitude !== null &&
+        report.latitude !== undefined &&
+        report.longitude !== undefined
+      ) {
+        return (
+          distanceMeters(
+            result.latitude,
+            result.longitude,
+            report.latitude,
+            report.longitude,
+          ) < 500
+        );
+      }
+
+      return (
+        locationKey !== "" &&
+        report.location.trim().toLowerCase() === locationKey &&
+        report.category.trim().toLowerCase() === categoryKey
+      );
+    }) ?? null
+  );
+}
+
 async function saveReport(result: AnalysisResult) {
+  const duplicate = findDuplicate(result);
+
+  if (duplicate) {
+    const confirmInstead = window.confirm(
+      `A similar open report already exists: "${duplicate.title}" (${duplicate.id}) at ${duplicate.location}.\n\nConfirm that report instead of filing a duplicate?`,
+    );
+
+    if (confirmInstead) {
+      await supportReport(duplicate);
+      setAnalysis(null);
+      setSelectedReport(
+        addedReports.find((report) => report.id === duplicate.id) ??
+          duplicate,
+      );
+      return;
+    }
+  }
+
   let report: CivicReport;
   let offline = false;
 
@@ -472,7 +856,7 @@ async function saveReport(result: AnalysisResult) {
     console.error("Could not save report to the server:", error);
     offline = true;
 
-    const id = `CL-${Date.now().toString().slice(-6)}`;
+    const id = offlineReportId();
 
     report = {
       id,
@@ -485,6 +869,9 @@ async function saveReport(result: AnalysisResult) {
       status: "Submitted",
       image: `indexeddb:${id}`,
       description: result.description,
+      supportCount: 0,
+      syncState: "pending" as const,
+      createdAt: new Date().toISOString(),
 
       // Preserve the original AI assessment
       priority: result.priority,
@@ -591,10 +978,16 @@ async function deleteReport(report: CivicReport) {
 
   if (!confirmed) return;
 
-  await deleteServerReport(report.id).catch((error) => {
+  try {
+    await deleteServerReport(report.id);
+  } catch (error) {
     console.error(`Could not delete ${report.id} from the server:`, error);
 
-  });
+    if ((error as { statusCode?: number }).statusCode === 401) {
+      showToast("Moderator key required to delete — add it in Settings.");
+      return;
+    }
+  }
 
   try {
     // Delete the stored photo for locally submitted reports.
@@ -703,7 +1096,7 @@ async function deleteReport(report: CivicReport) {
 
 
 // Real reports submitted by users in this browser.
-const allDashboardReports = [...addedReports];
+const allDashboardReports = [...visibleReports];
 
 // Dashboard statistics use real user-submitted reports only.
 const totalReports = allDashboardReports.length;
@@ -738,7 +1131,7 @@ const submittedReports = allDashboardReports.filter(
         onClick={() => setSidebarOpen(false)} />
 
       <div className={sidebarOpen ? "sidebar-wrap sidebar-open" : "sidebar-wrap"}>
-        <Sidebar active={active} onNavigate={navigate} />
+        <Sidebar active={active} onNavigate={navigate} reportCount={visibleReports.length} />
       </div>
 
       <div className="main-column">
@@ -746,15 +1139,34 @@ const submittedReports = allDashboardReports.filter(
           onMenuClick={() => setSidebarOpen((value) => !value)}
           lightMode={lightMode}
           onToggleTheme={() => setLightMode((value) => !value)}
+          notifications={notifications}
+          unseenCount={unseenNotifications}
+          onMarkSeen={markNotificationsSeen}
         />
 
         {active === "Community" ? (
           <main className="dashboard">
             <CommunityPage
-              reports={addedReports}
+              reports={visibleReports}
               imageUrls={reportImageUrls}
               onOpen={setSelectedReport}
               onUpload={() => navigate("Upload & Analyze")}
+            />
+          </main>
+        ) : active === "Moderation" ? (
+          <main className="dashboard">
+            <ModerationPage
+              reports={addedReports}
+              onOpen={setSelectedReport}
+              onModerate={(report, patch) => void moderateReport(report, patch)}
+              onDelete={(report) => void deleteReport(report)}
+            />
+          </main>
+        ) : active === "Insights" ? (
+          <main className="dashboard">
+            <InsightsPage
+              reports={visibleReports}
+              onOpen={setSelectedReport}
             />
           </main>
         ) : active === "Settings" ? (
@@ -764,7 +1176,7 @@ const submittedReports = allDashboardReports.filter(
               onToggleTheme={() => setLightMode((value) => !value)}
               tiles={tileProvider}
               onTileProvider={setTileProvider}
-              reportCount={addedReports.length}
+              reportCount={visibleReports.length}
               photoCount={Object.keys(reportImageUrls).length}
               onExport={exportReports}
               onClearData={() => void clearAllData()}
@@ -864,6 +1276,27 @@ const submittedReports = allDashboardReports.filter(
             <span className="disclaimer-status">OPEN ACCESS</span>
           </div>
 
+          {pendingReports.length > 0 && (
+            <div className="first-run-banner">
+              <div>
+                <strong>
+                  {pendingReports.length} report
+                  {pendingReports.length === 1 ? "" : "s"} waiting to sync.
+                </strong>
+                <span>
+                  Saved on this device while the server was unreachable.
+                  They sync automatically when you are back online.
+                </span>
+              </div>
+              <button
+                className="button-primary"
+                onClick={() => void syncPendingReports()}
+              >
+                <RefreshCw size={16} /> Sync now
+              </button>
+            </div>
+          )}
+
           {totalReports === 0 && (
             <div className="first-run-banner">
               <div>
@@ -934,10 +1367,12 @@ const submittedReports = allDashboardReports.filter(
 {featuredAnalysis ? (
   <>
     <div className="featured-image-wrap">
-      <img
-        src={featuredAnalysis.preview}
-        alt={`Uploaded image for ${featuredAnalysis.title}`}
-      />
+      {featuredAnalysis.preview ? (
+        <img
+          src={featuredAnalysis.preview}
+          alt={`Uploaded image for ${featuredAnalysis.title}`}
+        />
+      ) : null}
 
       <div className="image-overlay-label">
         <span className="status-dot" />
@@ -1097,11 +1532,15 @@ const submittedReports = allDashboardReports.filter(
     </span>
   </div>
 
-  <CivicMap
-    reports={[...addedReports, ...reports]}
-    onOpenReport={setSelectedReport}
-    tiles={tileProvider}
-  />
+  <Suspense
+    fallback={<p className="activity-empty">Loading map…</p>}
+  >
+    <CivicMap
+      reports={[...visibleReports, ...reports]}
+      onOpenReport={setSelectedReport}
+      tiles={tileProvider}
+    />
+  </Suspense>
 </section>
 
             </div>
@@ -1237,7 +1676,7 @@ const submittedReports = allDashboardReports.filter(
 
           <ReportsPanel
   onOpen={setSelectedReport}
-  addedReports={addedReports}
+  addedReports={visibleReports}
   imageUrls={reportImageUrls}
 />
 
@@ -1290,11 +1729,13 @@ const submittedReports = allDashboardReports.filter(
                   <X size={19} />
                 </button>
               </div>
-              <img
-  className="modal-photo"
-  src={resolveReportImage(selectedReport, reportImageUrls)}
-  alt={`Evidence for ${selectedReport.title}`}
-/>
+              {resolveReportImage(selectedReport, reportImageUrls) ? (
+                <img
+                  className="modal-photo"
+                  src={resolveReportImage(selectedReport, reportImageUrls)}
+                  alt={`Evidence for ${selectedReport.title}`}
+                />
+              ) : null}
               
 <div className="detail-info">
   <span><MapPin size={15} /> {selectedReport.location || "Location not provided"}</span>
@@ -1347,6 +1788,168 @@ const submittedReports = allDashboardReports.filter(
     ? selectedReport.description
     : "This is a sample report for demonstration purposes."}
 </p>
+
+{(selectedReport.confidence != null ||
+  selectedReport.issueDetected !== undefined ||
+  (selectedReport.visibleEvidence?.length ?? 0) > 0 ||
+  (selectedReport.limitations?.length ?? 0) > 0) && (
+  <div className="observation-box">
+    <div className="observation-title">
+      <Target size={16} />
+      AI visual assessment
+    </div>
+
+    <div className="analysis-metadata">
+      <strong>
+        Confidence:{" "}
+        {selectedReport.confidence == null
+          ? "Not provided"
+          : `${Math.round(selectedReport.confidence * 100)}%`}
+      </strong>
+      {selectedReport.issueDetected !== undefined && (
+        <span>
+          Issue detected: {selectedReport.issueDetected ? "Yes" : "No"}
+        </span>
+      )}
+      {selectedReport.priority && (
+        <span>Priority: {selectedReport.priority}</span>
+      )}
+    </div>
+
+    {(selectedReport.visibleEvidence?.length ?? 0) > 0 && (
+      <>
+        <strong>Visible evidence</strong>
+        <ul>
+          {selectedReport.visibleEvidence!.map((item, index) => (
+            <li key={`${index}-${item}`}>{item}</li>
+          ))}
+        </ul>
+      </>
+    )}
+
+    {(selectedReport.limitations?.length ?? 0) > 0 && (
+      <>
+        <strong>Limitations</strong>
+        <ul>
+          {selectedReport.limitations!.map((item, index) => (
+            <li key={`${index}-${item}`}>{item}</li>
+          ))}
+        </ul>
+      </>
+    )}
+
+    <span>
+      AI-generated findings can be incorrect. Verify the details
+      before acting on this report.
+    </span>
+  </div>
+)}
+
+              {(afterImageUrls[selectedReport.id] ??
+                resolveAfterImage(selectedReport)) ? (
+                <div className="before-after">
+                  <figure>
+                    {resolveReportImage(selectedReport, reportImageUrls) ? (
+                      <img
+                        src={resolveReportImage(selectedReport, reportImageUrls)}
+                        alt={`Before: ${selectedReport.title}`}
+                      />
+                    ) : null}
+                    <figcaption>Before</figcaption>
+                  </figure>
+                  <figure>
+                    <img
+                      src={
+                        afterImageUrls[selectedReport.id] ??
+                        resolveAfterImage(selectedReport)
+                      }
+                      alt={`After: ${selectedReport.title}`}
+                    />
+                    <figcaption>After</figcaption>
+                  </figure>
+                </div>
+              ) : null}
+
+              {selectedReport.status === "Resolved" &&
+                selectedReport.description !== undefined && (
+                  <label className="button-secondary after-upload">
+                    <Camera size={15} />
+                    {resolveAfterImage(selectedReport) ||
+                    afterImageUrls[selectedReport.id]
+                      ? "Replace after photo"
+                      : "Add after photo"}
+                    <input
+                      type="file"
+                      accept="image/*"
+                      hidden
+                      onChange={(event) => {
+                        const file = event.target.files?.[0];
+                        if (file) void handleAfterPhoto(selectedReport, file);
+                        event.target.value = "";
+                      }}
+                    />
+                  </label>
+                )}
+
+              {reportHistory.length > 0 && (
+                <div className="timeline">
+                  <strong>Status timeline</strong>
+                  {reportHistory.map((entry) => (
+                    <div className="timeline-item" key={entry.id}>
+                      <span className="timeline-dot" />
+                      <span>
+                        {entry.fromStatus
+                          ? `${entry.fromStatus} → ${entry.toStatus}`
+                          : `Filed as ${entry.toStatus}`}
+                      </span>
+                      <time>
+                        {new Date(entry.changedAt).toLocaleString()}
+                      </time>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <div className="share-actions">
+                <button
+                  className="button-secondary"
+                  onClick={() => void supportReport(selectedReport)}
+                  disabled={supportedIds.includes(selectedReport.id)}
+                >
+                  <ThumbsUp size={15} />
+                  {supportedIds.includes(selectedReport.id)
+                    ? "Confirmed by you"
+                    : "I see this too"}
+                  {` (${selectedReport.supportCount ?? 0})`}
+                </button>
+                <button
+                  className="button-secondary"
+                  onClick={() =>
+                    void moderateReport(selectedReport, {
+                      flagged: !selectedReport.flagged,
+                    })
+                  }
+                >
+                  <Flag size={15} />
+                  {selectedReport.flagged ? "Flagged" : "Flag for review"}
+                </button>
+                <button
+                  className="button-secondary"
+                  onClick={() => void copyReportLink(selectedReport)}
+                >
+                  <Link2 size={15} /> Copy link
+                </button>
+                <a
+                  className="button-secondary"
+                  href={`https://wa.me/?text=${encodeURIComponent(
+                    `${selectedReport.title} — ${selectedReport.location}\n${reportShareUrl(selectedReport)}`,
+                  )}`}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  <Share2 size={15} /> WhatsApp
+                </a>
+              </div>
 
               <div className="report-actions">
   {selectedReport.description !== undefined && (

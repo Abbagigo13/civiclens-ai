@@ -40,6 +40,14 @@ export default function SettingsPage({
   onClearData,
 }: Props) {
   const [backend, setBackend] = useState<BackendState>("checking");
+  const [modKey, setModKey] = useState<string>(() => {
+    try {
+      return localStorage.getItem("civiclens-mod-key") ?? "";
+    } catch {
+      return "";
+    }
+  });
+  const [modSaved, setModSaved] = useState(false);
 
   const testBackend = useCallback(async () => {
     setBackend("checking");
@@ -182,6 +190,62 @@ export default function SettingsPage({
               </span>
             </button>
           ))}
+        </div>
+      </section>
+
+      <section className="panel">
+        <div className="panel-heading">
+          <div>
+            <h2>Moderator key</h2>
+            <p>
+              Hiding and deleting reports requires the moderator key
+              when the server has one configured (MODERATOR_KEY).
+              Filing, flagging and browsing stay open to everyone.
+            </p>
+          </div>
+        </div>
+
+        <div className="settings-row">
+          <div>
+            <strong>{modKey ? "Key saved on this device" : "No key saved"}</strong>
+            <span>Stored only in this browser, sent with moderation actions.</span>
+          </div>
+          <div className="settings-actions">
+            <input
+              type="password"
+              value={modKey}
+              onChange={(event) => setModKey(event.target.value)}
+              placeholder="Moderator key"
+              aria-label="Moderator key"
+              style={{
+                minHeight: 36,
+                padding: "0 10px",
+                border: "1px solid rgba(146,170,222,.2)",
+                borderRadius: 8,
+                color: "#eaf0ff",
+                background: "#101b2c",
+                fontSize: 11,
+              }}
+            />
+            <button
+              className="button-secondary"
+              onClick={() => {
+                try {
+                  if (modKey.trim()) {
+                    localStorage.setItem("civiclens-mod-key", modKey.trim());
+                  } else {
+                    localStorage.removeItem("civiclens-mod-key");
+                  }
+                } catch {
+                  // Storage unavailable: key will not persist.
+                }
+                setModSaved(true);
+                window.setTimeout(() => setModSaved(false), 2000);
+              }}
+            >
+              <Check size={15} /> {modSaved ? "Saved" : "Save key"}
+            </button>
+          </div>
         </div>
       </section>
 

@@ -240,6 +240,58 @@ describe("reports store", () => {
     }
   });
 
+  it("increments support and stores after-photos", () => {
+    const store = createStore(":memory:");
+
+    try {
+      const created = store.createReport(validInput());
+      assert.equal(created.supportCount, 0);
+      assert.equal(created.hasAfterPhoto, false);
+
+      assert.equal(store.incrementSupport(created.id)?.supportCount, 1);
+      assert.equal(store.incrementSupport(created.id)?.supportCount, 2);
+      assert.equal(store.incrementSupport("CL-UNKNOWN"), null);
+
+      const bytes = Buffer.from([137, 80, 78, 71]);
+      const updated = store.setAfterPhoto(created.id, bytes, "image/png");
+      assert.equal(updated?.hasAfterPhoto, true);
+      assert.equal(updated?.hasPhoto, false);
+      assert.deepEqual(store.getAfterPhoto(created.id)?.data, bytes);
+      assert.equal(store.getAfterPhoto("CL-UNKNOWN"), null);
+      assert.equal(
+        store.setAfterPhoto("CL-UNKNOWN", bytes, "image/png"),
+        null,
+      );
+
+      assert.equal(store.deleteReport(created.id), true);
+      assert.equal(store.getAfterPhoto(created.id), null);
+    } finally {
+      store.close();
+    }
+  });
+
+  it("flags and hides reports for moderation", () => {
+    const store = createStore(":memory:");
+
+    try {
+      const created = store.createReport(validInput());
+      assert.equal(created.flagged, false);
+      assert.equal(created.hidden, false);
+
+      assert.equal(store.setModeration(created.id, { flagged: true })?.flagged, true);
+      assert.equal(store.setModeration(created.id, { hidden: true })?.hidden, true);
+      assert.equal(store.setModeration(created.id, { flagged: false })?.flagged, false);
+      assert.equal(store.setModeration("CL-UNKNOWN", { flagged: true }), null);
+      assert.throws(
+        () => store.setModeration(created.id, { flagged: "yes" }),
+        (error: unknown) =>
+          (error as { statusCode?: unknown }).statusCode === 400,
+      );
+    } finally {
+      store.close();
+    }
+  });
+
   it("returns null for unknown ids", () => {
     const store = createStore(":memory:");
 

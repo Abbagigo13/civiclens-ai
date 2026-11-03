@@ -1,4 +1,4 @@
-import { Router, type Request } from "express";
+import { Router, type Request, type Response } from "express";
 import multer from "multer";
 import rateLimit from "express-rate-limit";
 import { getStore } from "../services/reportsStore.js";
@@ -43,6 +43,20 @@ const reportsLimiter = rateLimit({
 });
 
 router.use(reportsLimiter);
+
+// Moderation (hide/delete) is destructive, so when MODERATOR_KEY is
+// configured it must be sent as x-moderator-key. Filing, browsing,
+// flagging and confirming stay open. Unset key = local/dev mode.
+function requireModerator(req: Request, res: Response): boolean {
+  const key = process.env.MODERATOR_KEY;
+
+  if (!key) return true;
+
+  if (req.header("x-moderator-key") === key) return true;
+
+  res.status(401).json({ error: "Moderator key required." });
+  return false;
+}
 
 router.post("/reports", (req, res) => {
   const report = getStore().createReport(req.body);
@@ -156,7 +170,90 @@ router.get("/reports/:id/photo", (req, res) => {
   res.send(photo.data);
 });
 
+router.post("/reports/:id/support", (req, res) => {
+  const id = requestId(req);
+  const report = id === null ? null : getStore().incrementSupport(id);
+
+  if (!report) {
+    res.status(404).json({ error: "Report not found." });
+    return;
+  }
+
+  res.json({ report });
+});
+
+router.post(
+  "/reports/:id/after-photo",
+  photoUpload.single("photo"),
+  (req, res) => {
+    const id = req.params.id;
+
+    if (!hasSafeReportId(id)) {
+      res.status(400).json({ error: "Invalid report id." });
+      return;
+    }
+
+    if (!req.file) {
+      res.status(400).json({ error: "Upload a photo." });
+      return;
+    }
+
+    const report = getStore().setAfterPhoto(
+      id,
+      req.file.buffer,
+      req.file.mimetype,
+    );
+
+    if (!report) {
+      res.status(404).json({ error: "Report not found." });
+      return;
+    }
+
+    res.status(201).json({ report });
+  },
+);
+
+router.get("/reports/:id/after-photo", (req, res) => {
+  const id = req.params.id;
+
+  if (!hasSafeReportId(id)) {
+    res.status(400).json({ error: "Invalid report id." });
+    return;
+  }
+
+  const photo = getStore().getAfterPhoto(id);
+
+  if (!photo) {
+    res.status(404).json({ error: "Photo not found." });
+    return;
+  }
+
+  res.setHeader("Content-Type", photo.mime);
+  res.setHeader("Cache-Control", "private, max-age=300");
+  res.send(photo.data);
+});
+
+router.patch("/reports/:id/moderation", (req, res) => {
+  const body = (req.body ?? {}) as { flagged?: unknown; hidden?: unknown };
+
+  // Hiding is destructive; flagging stays open to everyone.
+  if (body.hidden !== undefined && !requireModerator(req, res)) return;
+
+  const id = requestId(req);
+  const report =
+    id === null ? null : getStore().setModeration(id, body);
+
+  if (!report) {
+    res.status(404).json({ error: "Report not found." });
+    return;
+  }
+
+  res.json({ report });
+});
+
 router.delete("/reports/:id", (req, res) => {
+  if (!requireModerator(req, res)) return;
+
   const id = requestId(req);
   const deleted = id === null ? false : getStore().deleteReport(id);
 

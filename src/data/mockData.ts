@@ -17,6 +17,13 @@ export type CivicReport = {
 
   // True when a copy of the photo is stored on the server.
   hasPhoto?: boolean;
+  hasAfterPhoto?: boolean;
+  supportCount?: number;
+  createdAt?: string;
+  flagged?: boolean;
+  hidden?: boolean;
+  // "pending" = saved on this device only, waiting to reach the server.
+  syncState?: "synced" | "pending";
 
   // AI analysis metadata
   priority?: ReportPriority;

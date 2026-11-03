@@ -44,6 +44,10 @@ export type ValidatedReportInput = {
 export type StoredReport = ValidatedReportInput & {
   id: string;
   hasPhoto: boolean;
+  hasAfterPhoto: boolean;
+  supportCount: number;
+  flagged: boolean;
+  hidden: boolean;
   createdAt: string;
   updatedAt: string;
 };
@@ -87,6 +91,17 @@ export type ReportsStore = {
   updatePriority: (id: string, priority: unknown) => StoredReport | null;
   setPhoto: (id: string, data: Uint8Array, mime: string) => StoredReport | null;
   getPhoto: (id: string) => StoredPhoto | null;
+  setAfterPhoto: (
+    id: string,
+    data: Uint8Array,
+    mime: string,
+  ) => StoredReport | null;
+  getAfterPhoto: (id: string) => StoredPhoto | null;
+  incrementSupport: (id: string) => StoredReport | null;
+  setModeration: (
+    id: string,
+    patch: { flagged?: unknown; hidden?: unknown },
+  ) => StoredReport | null;
   deleteReport: (id: string) => boolean;
   close: () => void;
 };
@@ -280,6 +295,10 @@ type ReportRow = {
   status: string;
   priority: string | null;
   photo_mime: string | null;
+  after_photo_mime: string | null;
+  support_count: number;
+  flagged: number;
+  hidden: number;
   issue_detected: number | null;
   confidence: number | null;
   visible_evidence: string;
@@ -321,6 +340,10 @@ function mapReport(row: ReportRow): StoredReport {
     status: row.status as ReportStatus,
     priority: (row.priority as ReportPriority | null) ?? null,
     hasPhoto: row.photo_mime !== null,
+    hasAfterPhoto: row.after_photo_mime !== null,
+    supportCount: row.support_count ?? 0,
+    flagged: row.flagged === 1,
+    hidden: row.hidden === 1,
     issueDetected:
       row.issue_detected === null ? null : row.issue_detected === 1,
     confidence: row.confidence,
@@ -396,6 +419,10 @@ export function createStore(
       visible_evidence TEXT NOT NULL DEFAULT '[]',
       limitations TEXT NOT NULL DEFAULT '[]',
       photo_mime TEXT,
+      after_photo_mime TEXT,
+      support_count INTEGER NOT NULL DEFAULT 0,
+      flagged INTEGER NOT NULL DEFAULT 0,
+      hidden INTEGER NOT NULL DEFAULT 0,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
     );
@@ -432,6 +459,24 @@ export function createStore(
 
   if (!columns.some((column) => column.name === "photo_mime")) {
     db.exec("ALTER TABLE reports ADD COLUMN photo_mime TEXT");
+  }
+
+  if (!columns.some((column) => column.name === "after_photo_mime")) {
+    db.exec("ALTER TABLE reports ADD COLUMN after_photo_mime TEXT");
+  }
+
+  if (!columns.some((column) => column.name === "support_count")) {
+    db.exec(
+      "ALTER TABLE reports ADD COLUMN support_count INTEGER NOT NULL DEFAULT 0",
+    );
+  }
+
+  if (!columns.some((column) => column.name === "flagged")) {
+    db.exec("ALTER TABLE reports ADD COLUMN flagged INTEGER NOT NULL DEFAULT 0");
+  }
+
+  if (!columns.some((column) => column.name === "hidden")) {
+    db.exec("ALTER TABLE reports ADD COLUMN hidden INTEGER NOT NULL DEFAULT 0");
   }
 
   const insertReport = db.prepare(`
@@ -474,6 +519,15 @@ export function createStore(
   const updatePhotoStmt = db.prepare(`
     UPDATE reports SET photo_mime = :mime, updated_at = :updatedAt WHERE id = :id
   `);
+  const updateAfterPhotoStmt = db.prepare(`
+    UPDATE reports SET after_photo_mime = :mime, updated_at = :updatedAt WHERE id = :id
+  `);
+  const incrementSupportStmt = db.prepare(`
+    UPDATE reports SET support_count = support_count + 1, updated_at = :updatedAt WHERE id = :id
+  `);
+  const updateModerationStmt = db.prepare(`
+    UPDATE reports SET flagged = :flagged, hidden = :hidden, updated_at = :updatedAt WHERE id = :id
+  `);
   const deleteHistoryStmt = db.prepare(
     "DELETE FROM status_history WHERE report_id = :reportId",
   );
@@ -489,6 +543,27 @@ export function createStore(
   function removePhotoFiles(id: string): void {
     for (const ext of Object.values(photoMimeTypes)) {
       rmSync(join(photoDir, `${id}.${ext}`), { force: true });
+      rmSync(join(photoDir, `${id}-after.${ext}`), { force: true });
+    }
+  }
+
+  function readPhotoFile(
+    id: string,
+    mime: string | null | undefined,
+    suffix: string,
+  ): StoredPhoto | null {
+    if (!mime) return null;
+
+    const ext = photoMimeTypes[mime];
+    if (!ext) return null;
+
+    try {
+      return {
+        data: readFileSync(join(photoDir, `${id}${suffix}.${ext}`)),
+        mime,
+      };
+    } catch {
+      return null;
     }
   }
 
@@ -629,23 +704,81 @@ export function createStore(
     },
 
     getPhoto(id: string): StoredPhoto | null {
-      const mime = (
-        selectOne.get({ id }) as ReportRow | undefined
-      )?.photo_mime;
+      const row = selectOne.get({ id }) as ReportRow | undefined;
+      return readPhotoFile(id, row?.photo_mime, "");
+    },
 
-      if (!mime) return null;
-
+    setAfterPhoto(
+      id: string,
+      data: Uint8Array,
+      mime: string,
+    ): StoredReport | null {
       const ext = photoMimeTypes[mime];
-      if (!ext) return null;
 
-      try {
-        return {
-          data: readFileSync(join(photoDir, `${id}.${ext}`)),
-          mime,
-        };
-      } catch {
-        return null;
+      if (!ext) {
+        throw clientError("Only JPG, PNG, and WebP photos are supported.");
       }
+
+      if (!getReport(id)) return null;
+
+      for (const oldExt of Object.values(photoMimeTypes)) {
+        rmSync(join(photoDir, `${id}-after.${oldExt}`), { force: true });
+      }
+
+      writeFileSync(join(photoDir, `${id}-after.${ext}`), data);
+      updateAfterPhotoStmt.run({
+        id,
+        mime,
+        updatedAt: new Date().toISOString(),
+      });
+
+      return getReport(id);
+    },
+
+    getAfterPhoto(id: string): StoredPhoto | null {
+      const row = selectOne.get({ id }) as ReportRow | undefined;
+      return readPhotoFile(id, row?.after_photo_mime, "-after");
+    },
+
+    incrementSupport(id: string): StoredReport | null {
+      if (!getReport(id)) return null;
+
+      incrementSupportStmt.run({
+        id,
+        updatedAt: new Date().toISOString(),
+      });
+
+      return getReport(id);
+    },
+
+    setModeration(
+      id: string,
+      patch: { flagged?: unknown; hidden?: unknown },
+    ): StoredReport | null {
+      const current = getReport(id);
+      if (!current) return null;
+
+      const flagged =
+        patch.flagged === undefined
+          ? current.flagged
+          : optionalBoolean(patch.flagged, "flagged");
+      const hidden =
+        patch.hidden === undefined
+          ? current.hidden
+          : optionalBoolean(patch.hidden, "hidden");
+
+      if (flagged === null || hidden === null) {
+        throw clientError("flagged and hidden must be true or false.");
+      }
+
+      updateModerationStmt.run({
+        id,
+        flagged: flagged ? 1 : 0,
+        hidden: hidden ? 1 : 0,
+        updatedAt: new Date().toISOString(),
+      });
+
+      return getReport(id);
     },
 
     deleteReport(id: string): boolean {

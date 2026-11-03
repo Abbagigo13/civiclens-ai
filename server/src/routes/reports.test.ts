@@ -75,4 +75,74 @@ describe("open report filing", () => {
     );
     assert.equal(response.status, 200);
   });
+
+  it("requires the moderator key for hide and delete when configured", async () => {
+    process.env.MODERATOR_KEY = "test-moderator-key";
+
+    try {
+      const created = await fetch(`${base}/api/reports`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: "Spam report",
+          category: "Other",
+          location: "Kaduna",
+        }),
+      });
+      const { report } = (await created.json()) as {
+        report: { id: string };
+      };
+
+      // Flagging stays open without the key.
+      const flagged = await fetch(
+        `${base}/api/reports/${report.id}/moderation`,
+        {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ flagged: true }),
+        },
+      );
+      assert.equal(flagged.status, 200);
+
+      const hiddenNoKey = await fetch(
+        `${base}/api/reports/${report.id}/moderation`,
+        {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ hidden: true }),
+        },
+      );
+      assert.equal(hiddenNoKey.status, 401);
+
+      const hiddenWithKey = await fetch(
+        `${base}/api/reports/${report.id}/moderation`,
+        {
+          method: "PATCH",
+          headers: {
+            "Content-Type": "application/json",
+            "x-moderator-key": "test-moderator-key",
+          },
+          body: JSON.stringify({ hidden: true }),
+        },
+      );
+      assert.equal(hiddenWithKey.status, 200);
+
+      const deleteNoKey = await fetch(
+        `${base}/api/reports/${report.id}`,
+        { method: "DELETE" },
+      );
+      assert.equal(deleteNoKey.status, 401);
+
+      const deleteWithKey = await fetch(
+        `${base}/api/reports/${report.id}`,
+        {
+          method: "DELETE",
+          headers: { "x-moderator-key": "test-moderator-key" },
+        },
+      );
+      assert.equal(deleteWithKey.status, 204);
+    } finally {
+      delete process.env.MODERATOR_KEY;
+    }
+  });
 });

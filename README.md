@@ -1,5 +1,21 @@
 # CivicLens AI
 
+## For judges: explore the platform in 5 minutes
+
+**Live app:** https://civiclens-ai-jbup.onrender.com/dashboard — no account, no key, nothing to install. Everything below works with mouse or touch.
+
+1. **File a report with AI (2 min).** On the dashboard, use **Upload & Analyze** with any photo of a pothole, blocked drain, waste pile or flooding. Review the AI draft — note the confidence, visible evidence, and limitations — edit anything, pick the spot on the location map, then **Confirm & save**.
+2. **Or file manually (30 sec).** Same panel, manual filing: write it in your own words. If the server were unreachable, the report would be saved on-device as **Pending sync** and sent automatically when you reconnect — watch for that badge.
+3. **Open your report.** In **My Reports**, click it. Check the AI assessment box, then try **I see this too** (the community confirmation count), **Copy link**, and **WhatsApp**. Opening that copied link in a new tab lands directly on the report.
+4. **Work the queue.** Change status to **Under Review**, then **Resolved**. Add an **after photo** to see the before/after comparison, and scroll the **status timeline**. The bell in the top bar now has a notification for the status change.
+5. **See the official's view.** Open **Insights** (sidebar): hotspots by area, category mix, unresolved waiting times, most-confirmed issues, and a CSV export. Then the **Map View**: clusters split as you zoom, with search and status/category filters.
+6. **Try moderation.** Flag any report from its detail view, then open **Moderation**. Hiding/deleting asks for a moderator key when one is configured on the server (Settings → Moderator key); flagging stays open to everyone.
+7. **File a near-duplicate.** File the same issue again near an existing open report — the app suggests confirming the existing report instead of duplicating it.
+
+Things to notice: sample reports are always labelled **SAMPLE** and never counted in statistics; AI findings are presented as preliminary observations with uncertainty, never as verified facts; and the whole flow works on a phone.
+
+---
+
 **CivicLens AI** turns photos of community infrastructure problems into structured, evidence-aware reports that people can review, submit, and track.
 
 Initial focus: a practical prototype for problems such as potholes, blocked drains, accumulated waste, damaged sidewalks, and other visible public-infrastructure issues in Nigerian communities.
